@@ -13,22 +13,65 @@
 #include <signal.h>
 #include <pthread.h>
 #include "utils.h"
+#include "server.h"
 
 #define LISTEN_BACKLOG 50
 
+struct ApplicationContext context = { 0 };
 
-struct ssock_t {
-	int fd;
+int initContext() 
+{
+	memset(&context, 0, sizeof(context));
+	if (	initVector(&context.socks, 2) ||
+		initVector(&context.socksThreads, 2) || 
+		initVector(&context.conns, 2) || 
+		pthread_mutex_init(&context.closeLock, NULL)) {
 
-	struct sockaddr *addr;
-	socklen_t addrlen;
-};
+		goto error;
+	}
 
-struct connData {
-	pthread_t *connThread;
-	FILE *connStream;
-	pthread_mutex_t *lock;
-};
+	return 0;
+
+error:
+	return -1;
+}
+
+struct ApplicationContext getContext()
+{
+	return context;
+}
+
+int startServer()
+{
+	size_t sz = context.socks.size;
+	size_t *iptrs = malloc(sizeof(size_t) * sz);
+
+	for (size_t i = 0; i < sz; i++) {
+		iptrs[i] = i;
+
+		pthread_t *thr = malloc(sizeof(pthread_t));
+
+		if (pthread_create(thr, NULL, serverListener, iptrs + i)) {
+			perror("Unable to create thread");
+			goto error;
+		}
+
+		insertVector(&context.socksThreads, thr);
+	}
+
+	for (size_t i = 0; i < context.socksThreads.size; i++) {
+		pthread_t *thr = vectorGetEl(&context.socksThreads, i);
+		if (thr == NULL) continue;
+		
+		pthread_join(*thr, NULL);
+	}
+
+	free(iptrs);
+	return 0;
+error:
+	free(iptrs);
+	return -1;
+}
 
 int bindSocket(struct ssock_t *res, char *sockpath)
 {
@@ -80,140 +123,14 @@ error:
 	return -1;
 }
 
-struct {
-	/**
-	* Vector of struct ssock_t
-	*/
-	struct vector socks;	
-
-	/**
-	* Vector of struct pthread_t
-	*/
-	struct vector socksThreads;
-
-	/**
-	* Vector of struct connData
-	*/
-	struct vector conns;
-} context;
-
-pthread_mutex_t closeLock;
-
-void closeSocks(int sig)
+int contextRegisterSocket(struct ssock_t sock)
 {
-	printf("%d\n", gettid());
-	pthread_mutex_lock(&closeLock);
+	struct ssock_t *sockp = malloc(sizeof(struct ssock_t));
+	*sockp = sock;
 
-	int err = 0;
+	insertVector(&context.socks, sockp);
 
-	printf("Closing... %zu %zu %zu\n", context.socksThreads.size, context.socks.size, context.conns.size);
-
-	for (size_t i = 0; i < context.socksThreads.size; i++) {
-		pthread_t **scpt = (pthread_t **) context.socksThreads.arr + i;
-		pthread_t *sockThread = *scpt;
-		if (sockThread == NULL) continue;
-
-		pthread_cancel(*sockThread);
-
-		free(sockThread);
-		*scpt = NULL;
-	}
-
-	printf("Closed listener %zu\n", context.socks.size);
-
-	for (size_t i = 0; i < context.socks.size; i++) {
-		struct ssock_t **sockp = (struct ssock_t **)context.socks.arr + i;
-		struct ssock_t *sock = *sockp;
-
-		printf("Closing sock1\n");
-		if (sock == NULL) continue;
-
-		printf("Closing sock\n");
-		close(sock->fd);
-		printf("Closed sock\n");
-		if (unlink(sock->addr->sa_data)) {
-			err = errno;
-			fprintf(stderr, "Unable to unbind socket %s: %s\n", sock->addr->sa_data, strerror(errno));
-		}
-
-		free(sock->addr);
-		free(sock);
-		*sockp = NULL;
-	}
-
-	printf("Closed sock and listener\n");
-
-	for (size_t i = 0; i < context.conns.size; i++) {
-		struct connData *cd = vectorGetEl(&context.conns, i);
-
-		if (cd == NULL) continue;
-		struct connData ccd = *cd;
-
-		if (ccd.lock == NULL || pthread_mutex_lock(ccd.lock))
-			continue;
-
-		if (vectorGetEl(&context.conns, i) == NULL) continue;
-		cd->lock = NULL;
-
-		pthread_mutex_t *lock = ccd.lock;
-
-		pthread_t *connThread = ccd.connThread;
-		pthread_cancel(*connThread);
-		free(ccd.connThread);
-
-		printf("Closing %d\n", fileno(ccd.connStream));
-		fclose(ccd.connStream);
-
-		free(cd);
-		vectorSetEl(&context.conns, i, NULL);
-
-		pthread_mutex_unlock(lock);
-		pthread_mutex_destroy(lock);
-	}
-
-	free(context.socksThreads.arr);
-	free(context.socks.arr);
-	free(context.conns.arr);
-
-	printf("Deleted connection threads\n");
-
-	if (errno == 0 && sig == SIGINT) {
-		printf("Interrupted!\n");
-		exit(EXIT_SUCCESS);
-	} else {
-		if (errno != 0)
-			printf("Something went wrong while closing app: %s\n", strerror(errno));
-		else 
-			printf("Internal failure!\n");
-
-		exit(EXIT_FAILURE);
-	}
-
-	pthread_mutex_unlock(&closeLock);
-}
-
-void *handlerThread(void * rawsig) {
-	int *sig = (int *)rawsig;
-
-	closeSocks(*sig);
-
-	return NULL;
-}
-
-void handlerCallback(int sig) {
-	int *sigp = malloc(sizeof(int));
-	*sigp = sig;
-
-	pthread_t thr;
-
-	if (pthread_create(&thr, NULL, handlerThread, sigp)) {
-		goto error;
-	}
-
-	pthread_join(thr, NULL);
-error:
-	perror("Unable to handle cancel gracefully");
-	return closeSocks(sig);
+	return 0;
 }
 
 void *connListener(void *cip)
@@ -263,12 +180,14 @@ closeConn:
 	return NULL;
 }
 
-void *serverListener(void *rawsock)
+void *serverListener(void *sip)
 {
+	int si = *(int *)sip;
+	struct ssock_t *sockp = vectorGetEl(&context.socks, si);
+	if (sockp == NULL) return NULL;
+	struct ssock_t sock = *sockp;
 
-	struct ssock_t *sock = (struct ssock_t *)rawsock;
-
-	if (listen(sock->fd, LISTEN_BACKLOG)) {
+	if (listen(sock.fd, LISTEN_BACKLOG)) {
 		perror("Unable to listen socket");
 		goto error;
 	}
@@ -284,7 +203,7 @@ void *serverListener(void *rawsock)
 
 
 	while (1) {
-		int nfd = accept(sock->fd, sock->addr, &sock->addrlen);
+		int nfd = accept(sock.fd, sock.addr, &sock.addrlen);
 
 		if (nfd == -1)
 			goto connError;
@@ -316,54 +235,135 @@ void *serverListener(void *rawsock)
 
 connError:
 		perror("Unable to accept new connection");
-		goto error;
+		break;
 	}
 
 	pthread_attr_destroy(&thattr);
 
-	return NULL;
-
 error:
-	raise(SIGCHLD);
 	return NULL;
 }
 
-
-int main(int argc, char *argv[]) 
+int closeServer(int sig)
 {
-	printf("Main ttid: %d\n", gettid());
-	pthread_mutex_init(&closeLock, NULL);
+	pthread_mutex_lock(&context.closeLock);
 
-	memset(&context, 0, sizeof(context));
+	int err = 0;
 
-	if (	initVector(&context.socks, 2) 		||
-		initVector(&context.conns, 2) 	||
-		initVector(&context.socksThreads, 2)	) {
+	printf("Closing...\n");
 
-		perror("Unable to initialize vector");
-		return 1;
+	for (size_t i = 0; i < context.socksThreads.size; i++) {
+		pthread_t **scpt = (pthread_t **) context.socksThreads.arr + i;
+		pthread_t *sockThread = *scpt;
+		if (sockThread == NULL) continue;
+
+		pthread_cancel(*sockThread);
+
+		free(sockThread);
+		*scpt = NULL;
 	}
 
+	printf("Closed listeners\n");
 
-	if (argc < 2) {
-		if (argc == 0) {
-			errx(EXIT_FAILURE, "Invalid arguments. Accepted format: </path/to/socket>+");
-		} else {
-			errx(EXIT_FAILURE, "Invalid arguments. Accepted format: %s </path/to/socket>+", argv[0]);
+	for (size_t i = 0; i < context.socks.size; i++) {
+		struct ssock_t **sockp = (struct ssock_t **)context.socks.arr + i;
+		struct ssock_t *sock = *sockp;
+
+		if (sock == NULL) continue;
+
+		close(sock->fd);
+		if (unlink(sock->addr->sa_data)) {
+			err = errno;
+			fprintf(stderr, "Unable to unbind socket %s: %s\n", sock->addr->sa_data, strerror(errno));
+			errno = err;
+		}
+
+		free(sock->addr);
+		free(sock);
+		*sockp = NULL;
+	}
+
+	printf("Closed socks\n");
+
+	for (size_t i = 0; i < context.conns.size; i++) {
+		struct connData *cd = vectorGetEl(&context.conns, i);
+
+		if (cd == NULL) continue;
+		struct connData ccd = *cd;
+
+		if (ccd.lock == NULL || pthread_mutex_lock(ccd.lock))
+			continue;
+
+		if (vectorGetEl(&context.conns, i) == NULL) continue;
+		cd->lock = NULL;
+
+		pthread_mutex_t *lock = ccd.lock;
+
+		pthread_t *connThread = ccd.connThread;
+		pthread_cancel(*connThread);
+		free(ccd.connThread);
+
+		printf("Closing connection file %d\n", fileno(ccd.connStream));
+		fclose(ccd.connStream);
+
+		free(cd);
+		vectorSetEl(&context.conns, i, NULL);
+
+		pthread_mutex_unlock(lock);
+		pthread_mutex_destroy(lock);
+	}
+
+	free(context.socksThreads.arr);
+	free(context.socks.arr);
+	free(context.conns.arr);
+
+	printf("Closed all connections\n");
+
+	if (errno == 0 && (sig == SIGINT || sig == 0)) {
+		printf("Interrupted!\n");
+		return 0;
+	} else {
+		if (errno != 0) {
+			printf("Something went wrong while closing the app: %s\n", strerror(errno));
+			return -1;
+		} else { 
+			printf("Internal failure!\n");
+			return 1;
 		}
 	}
+}
 
-	char *sockaddr = argv[1];
+void *handlerThread(void * rawsig) {
+	int *sig = (int *)rawsig;
 
-	struct ssock_t *sock = malloc(sizeof(struct ssock_t));
-	if (bindSocket(sock, sockaddr)) {
-		perror("Unable to set up a socket");
-		return 1;
+	int closeStatus = closeServer(*sig);
+
+	if (closeStatus) 
+		exit(EXIT_FAILURE);
+	else 
+		exit(EXIT_SUCCESS);
+
+	return NULL;
+}
+
+void handlerCallback(int sig) {
+	int *sigp = malloc(sizeof(int));
+	*sigp = sig;
+
+	pthread_t thr;
+
+	if (pthread_create(&thr, NULL, handlerThread, sigp)) {
+		goto error;
 	}
 
+	pthread_join(thr, NULL);
+error:
+	perror("Unable to handle cancel gracefully");
+	closeServer(sig);
+	exit(EXIT_FAILURE);
+}
 
-	insertVector(&context.socks, sock);
-	
+int initSighandler() {
 	struct sigaction act;
 	memset(&act, 0, sizeof(act));
 	act.sa_handler = handlerCallback;
@@ -374,23 +374,8 @@ int main(int argc, char *argv[])
 		sigaction(SIGALRM, &act, NULL) == -1 ) {
 
 		perror("sigaction");
-		exit(EXIT_FAILURE);
+		return -1;
 	}
-
-	pthread_t *thr = malloc(sizeof(pthread_t));
-
-	if (pthread_create(thr, 0, serverListener, sock)) {
-		perror("Unable to start listener");
-		raise(SIGTERM);
-	}
-
-	insertVector(&context.socksThreads, thr);
-	
-	pthread_join(*thr, NULL);
-
-	printf("Hello, world!\n");
-	closeSocks(0);
 
 	return 0;
 }
-
