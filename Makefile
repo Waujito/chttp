@@ -2,8 +2,8 @@ ROOT_DIR := $(PWD)
 CXX := g++
 CC := gcc
 
-CXX_FLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -pedantic -Ofast -std=c++23
-CC_FLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -pedantic -Ofast -std=gnu23
+CXX_FLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-unused-label -pedantic -Ofast -std=c++23
+CC_FLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-unused-label -pedantic -Ofast -std=gnu23
 
 SRC_DIR := $(shell realpath src)
 BIN_DIR := $(shell realpath bin)
@@ -23,7 +23,7 @@ INCLUDE_FLAGS := -Iinclude/
 all: prepare $(APP)
 
 run: all
-	$(BIN_DIR)/app /tmp/1234rwd.socket
+	$(BIN_DIR)/app -U /tmp/1234rwd.socket -T 127.0.0.1:8888
 
 prepare:
 	@mkdir -p $(BIN_DIR)

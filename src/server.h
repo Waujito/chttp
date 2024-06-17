@@ -2,16 +2,33 @@
 #define SERVER_H
 
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include "utils.h"
 
 /**
- * Represents a socket.
+ * Represents a ready (created) socket.
  */
-struct ssock_t {
+struct ssock {
 	int fd;
 
 	struct sockaddr *addr;
+	socklen_t addrlen;
+};
+
+/**
+ * Represents a socket data that should be used to create a sock (struct ssock).
+ */
+struct isock {
+	// Same as socket(2)
+	int socket_family;
+	// Same as socket(2)
+	int socket_type;
+	// Same as socket(2)
+	int protocol;
+	// Same as bind(2)
+	struct sockaddr *addr;
+	// Same as bind(2)
 	socklen_t addrlen;
 };
 
@@ -29,7 +46,7 @@ struct connData {
  */
 struct ApplicationContext {
 	/**
-	* Vector of struct ssock_t
+	* Vector of struct ssock
 	*/
 	struct vector socks;	
 
@@ -70,18 +87,42 @@ struct ApplicationContext getContext();
 int startServer();
 
 /**
- * Creates new socket and binds it to the sockpath
+ * Creates new socket and binds it.
+ *
+ * @res A pointer to sock to be bound.
+ * @sockdata Data used to create socket.
  *
  * @Returns Socket creation status: 0 on success, -1 + errno otherwise.
  */
-int bindSocket(struct ssock_t *res, char *sockpath);
+int bindSocket(struct ssock *res, struct isock sockdata);
+
+/**
+ * Simplifies creation of the unix socket (constructs struct isock).
+ *
+ * @res A pointer to sock to be bound.
+ * @sockpath path to the socket
+ *
+ * @Returns Socket creation status: 0 on success, -1 + errno otherwise.
+ */
+int bindUnixSocket(struct ssock *res, char *sockpath);
+
+/**
+ * Simplifies creation of the TCP socket (constructs struct isock).
+ *
+ * @res A pointer to sock to be bound.
+ * @sin_port Port of tcp socket. See ip(7)
+ * @sin_addr Address of socket. struct in_addr represents byte format of IPv4 address. See ip(7)
+ *
+ * @Returns Socket creation status: 0 on success, -1 + errno otherwise.
+ */
+int bindTCPSocket(struct ssock *res, in_port_t sin_port, struct in_addr sin_addr);
 
 /**
  * Registers socket in context.
  *
  * @Returns Context registration status: 0 on success, -1 + errno otherwise.
  */
-int contextRegisterSocket(struct ssock_t sock);
+int contextRegisterSocket(struct ssock sock);
 
 /**
  * Thread callback that listens on one connection.
@@ -93,7 +134,7 @@ void *connListener(void *cip);
 /**
  * Thread callback that listens on one socket, accepts new connections and redirects it to connListener()
  *
- * @sip A pointer to a size_t variable which represents an index of struct ssock_t in context.socks vector.
+ * @sip A pointer to a size_t variable which represents an index of struct ssock in context.socks vector.
  */
 void *serverListener(void *sip);
 

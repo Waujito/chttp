@@ -11,11 +11,18 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
-#include <pthread.h>
+#include <pthread.h>      
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include "utils.h"
 #include "server.h"
 
-#define LISTEN_BACKLOG 50
+#ifndef LISTEN_BACKLOG
+/**
+* Specifies maximum available connections for the server.
+*/
+#define LISTEN_BACKLOG 1000
+#endif
 
 struct ApplicationContext context = { 0 };
 
@@ -73,9 +80,10 @@ error:
 	return -1;
 }
 
-int bindSocket(struct ssock_t *res, char *sockpath)
+
+int bindSocket(struct ssock *res, struct isock sockdata)
 {
-	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	int fd = socket(sockdata.socket_family, sockdata.socket_type, sockdata.protocol);
 
 	if (fd == -1) {
 		int ecode = errno;
@@ -83,6 +91,35 @@ int bindSocket(struct ssock_t *res, char *sockpath)
 		errno = ecode;
 		goto error;
 	}
+
+
+	if (bind(fd, sockdata.addr, sockdata.addrlen)) {
+		int err = errno;
+		perror("Unable to bind socket to the given address");
+		errno = err;
+
+		goto error;
+	}
+
+	errno = 0;
+
+	memset(res, 0, sizeof(struct ssock));
+	res->fd = fd;
+	res->addr = sockdata.addr;
+	res->addrlen = sockdata.addrlen;
+
+	return 0;
+error:
+	return -1;
+}
+
+int bindUnixSocket(struct ssock *res, char *sockpath) {
+	struct isock sockdata = {
+		.socket_family = AF_UNIX,
+		.socket_type = SOCK_STREAM,
+		.protocol = 0
+	};
+
 
 	struct sockaddr_un *addr = calloc(sizeof(struct sockaddr_un), sizeof(char));
 
@@ -103,29 +140,42 @@ int bindSocket(struct ssock_t *res, char *sockpath)
 
 	strcpy(addr->sun_path, sockpath);
 
-	if (bind(fd, (struct sockaddr *)addr, sizeof(*addr))) {
-		int err = errno;
-		perror("Unable to bind socket to the given address");
-		errno = err;
+	sockdata.addr = (struct sockaddr *)addr;
+	sockdata.addrlen = sizeof(*addr);
 
-		goto error;
-	}
+	return bindSocket(res, sockdata);
 
-	errno = 0;
-
-	memset(res, 0, sizeof(struct ssock_t));
-	res->fd = fd;
-	res->addr = (struct sockaddr *)addr;
-	res->addrlen = sizeof(*addr);
-
-	return 0;
 error:
 	return -1;
 }
 
-int contextRegisterSocket(struct ssock_t sock)
+int bindTCPSocket(struct ssock *res, in_port_t sin_port, struct in_addr sin_addr) {
+	struct isock sockdata = {
+		.socket_family = AF_INET,
+		.socket_type = SOCK_STREAM,
+		.protocol = 0
+	};
+
+
+	struct sockaddr_in *addr = calloc(sizeof(struct sockaddr_in), sizeof(char));
+
+	addr->sin_family = AF_INET;
+	addr->sin_port = htons(sin_port);
+	addr->sin_addr = sin_addr;
+
+	sockdata.addr = (struct sockaddr *)addr;
+	sockdata.addrlen = sizeof(*addr);
+
+	return bindSocket(res, sockdata);
+error:
+	return -1;
+}
+
+
+
+int contextRegisterSocket(struct ssock sock)
 {
-	struct ssock_t *sockp = malloc(sizeof(struct ssock_t));
+	struct ssock *sockp = malloc(sizeof(struct ssock));
 	*sockp = sock;
 
 	insertVector(&context.socks, sockp);
@@ -137,7 +187,6 @@ void *connListener(void *cip)
 {
 	if (cip == NULL) return NULL;
 	int ci = *(int *)cip;
-	printf("%d", ci);
 	free(cip);
 
 	struct connData *conn = vectorGetEl(&context.conns, ci);
@@ -183,14 +232,16 @@ closeConn:
 void *serverListener(void *sip)
 {
 	int si = *(int *)sip;
-	struct ssock_t *sockp = vectorGetEl(&context.socks, si);
+	struct ssock *sockp = vectorGetEl(&context.socks, si);
 	if (sockp == NULL) return NULL;
-	struct ssock_t sock = *sockp;
+	struct ssock sock = *sockp;
+
 
 	if (listen(sock.fd, LISTEN_BACKLOG)) {
 		perror("Unable to listen socket");
 		goto error;
 	}
+
 
 
 	pthread_attr_t thattr;
@@ -266,16 +317,19 @@ int closeServer(int sig)
 	printf("Closed listeners\n");
 
 	for (size_t i = 0; i < context.socks.size; i++) {
-		struct ssock_t **sockp = (struct ssock_t **)context.socks.arr + i;
-		struct ssock_t *sock = *sockp;
+		struct ssock **sockp = (struct ssock **)context.socks.arr + i;
+		struct ssock *sock = *sockp;
 
 		if (sock == NULL) continue;
 
 		close(sock->fd);
-		if (unlink(sock->addr->sa_data)) {
-			err = errno;
-			fprintf(stderr, "Unable to unbind socket %s: %s\n", sock->addr->sa_data, strerror(errno));
-			errno = err;
+
+		if (sock->addr->sa_family == AF_UNIX) {
+			if (unlink(sock->addr->sa_data)) {
+				err = errno;
+				fprintf(stderr, "Unable to unbind unix socket %s: %s\n", sock->addr->sa_data, strerror(errno));
+				errno = err;
+			}
 		}
 
 		free(sock->addr);
