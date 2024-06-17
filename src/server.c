@@ -1,10 +1,7 @@
 #define _GNU_SOURCE
-#include <unistd.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/socket.h>
-#include <sys/io.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/un.h>
@@ -26,7 +23,7 @@
 
 struct ApplicationContext context = { 0 };
 
-int initContext() 
+int initContext(connhandler_t connhander) 
 {
 	memset(&context, 0, sizeof(context));
 	if (	initVector(&context.socks, 2) ||
@@ -36,6 +33,8 @@ int initContext()
 
 		goto error;
 	}
+
+	context.connhandler = connhander;
 
 	return 0;
 
@@ -193,22 +192,10 @@ void *connListener(void *cip)
 	if (conn == NULL) return NULL;
 
 	FILE *stream = conn->connStream;
-
-	printf("Got new connection on file %d\n", fileno(stream));
-
-	char *line = NULL;
-	size_t lineLen = 0;
-
-	while(getline(&line, &lineLen, stream) != -1) {
-		if (!strcmp(line, "ping\n")) {
-			fprintf(stream, "pong\n");
-		} else {
-			fprintf(stream, "Invalid command\n");
-		}
-	}
+	
+	context.connhandler(stream);
 
 closeConn:
-	free(line);
 	vectorSetEl(&context.conns, ci, NULL);
 
 	pthread_mutex_t *lock = conn->lock;

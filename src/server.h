@@ -41,6 +41,12 @@ struct connData {
 	pthread_mutex_t *lock;
 };
 
+
+/**
+ * Callback function that is called on each connection.
+ */
+typedef void (*connhandler_t)(FILE *connStream);
+
 /**
  * Main server context.
  */
@@ -64,14 +70,20 @@ struct ApplicationContext {
 	 * Locks close function. 
 	 */
 	pthread_mutex_t closeLock;
+
+	/**
+	 * Callback for connections.
+	 */
+	connhandler_t connhandler;
 };
+
 
 /**
  * Initializes server context (a global variable used to store server information between threads)
  *
  * @Returns Context creation status: 0 on success, -1 + errno otherwise.
  */
-int initContext();
+int initContext(connhandler_t connhandler);
 
 /**
  * @Returns current application context.
