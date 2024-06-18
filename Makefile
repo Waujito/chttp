@@ -2,8 +2,8 @@ ROOT_DIR := $(PWD)
 CXX := g++
 CC := gcc
 
-CXX_FLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-unused-label -pedantic -Ofast -std=c++23
-CC_FLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-unused-label -pedantic -Ofast -std=gnu23
+CXX_FLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-unused-label -pedantic -O0 -g -std=c++23
+CC_FLAGS := -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-unused-label -pedantic -O0 -g -std=gnu23
 
 SRC_DIR := $(shell realpath src)
 BIN_DIR := $(shell realpath bin)
