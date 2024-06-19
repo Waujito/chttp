@@ -1,6 +1,0 @@
-CompileFlags:
-  Add:
-    - "-x"
-    - "c"
-    - "-std=gnu11"
-    - "-D_GNU_SOURCE"
