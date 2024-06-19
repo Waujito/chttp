@@ -236,6 +236,7 @@ keepProcess:
 	bodyc = 0;
 
 	char *contentSizeH = getHTTPHeader_p(&headers, "Content-Length");
+	if (contentSizeH == NULL) goto processBody;
 
 	char *end;
 	long contentSZ = strtoll(contentSizeH, &end, 10);
@@ -246,6 +247,7 @@ keepProcess:
 	bodyc = contentSZ;
 	printf("%zu\n", bodyc);
 
+processBody:
 	body = malloc(sizeof(char) * bodyc);
 	if (body == NULL) goto error;
 
