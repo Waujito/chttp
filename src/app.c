@@ -1,11 +1,12 @@
-#define _GNU_SOURCE
 #include "server.h"
 #include <err.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <search.h>
+#include <unistd.h>
 #include "http.h"
+
 
 #define HTTPHEAD_PROCESSING 0
 #define HTTPHEADERS_PROCESSING 1
@@ -16,54 +17,43 @@ void connhandler(FILE *stream)
 {
 	printf("Got new connection on file %d\n", fileno(stream));
 
-	struct httpHead head;
-	struct hsearch_data headers;
-	char *body;
-	size_t bodyc;
+	struct HTTPRequest req;
+	while (!feof(stream)) {
+		printf("Got new request on stream %d\n", fileno(stream));
+		int status = parseHTTPRequest(stream, &req);
 
-	// hcreate_r(1000, &headers);
+		if (status == HTTPREQ_FAILED) {
+			destroyHTTPRequest(&req);
 
-	char *line = NULL;
-	size_t nlineLen = 0;
-
-	int processing_state = HTTPHEAD_PROCESSING;  
-	while(getline(&line, &nlineLen, stream) != -1) {
-		printf("%s", line);
-
-		if (processing_state == HTTPHEAD_PROCESSING) {
-			if (parseHTTPHead(line, &head)) {
-				printf("Unable to parse head\n");
-				goto closeConn;
-			} else {
-				processing_state++;
-			}
-		} else if (processing_state == HTTPHEADERS_PROCESSING) {
-			printf("Process headers\n");
-
-			if (!strcmp(line, "\r\n") || !strcmp(line, "\n"))
-				processing_state++;
-		} 
-		if (processing_state == HTTPBODY_PROCESSING) {
-			printf("Process body\n");
-			bodyc = 0;
-			body = NULL;
-			processing_state = HTTPPROCESSING_END;
-		} 
-
-		if (processing_state == HTTPPROCESSING_END) {
-			printf("Process ended\n");
-			printf("Connection handled!\n");
-
-			fprintf(stream, "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/plain\r\nContent-Length:10\r\n\r\nabcdefghsdgflkjds;lfkgjs;ldfkgj\r\n");
-			processing_state = HTTPHEAD_PROCESSING;
-
-			goto closeConn;
+			printf("Cannot parse request\n");
+			goto closeHandler;
+	
+		} else if (status == HTTPREQ_EOF) {
+			destroyHTTPRequest(&req);
+			goto closeHandler;
 		}
+
+		for (size_t i = 0; i < req.headers.size; i++) {
+			struct HTTPHeader header;
+			vectorCopyEl_p(&req.headers, i, (char *)&header);
+			printf("%s: %s\n", header.key, header.value);
+		}
+
+		printf("%s\n", req.body);
+
+		destroyHTTPRequest(&req);
+		fprintf(stream, "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nContent-Type: text/plain\r\nContent-Length:10\r\n\r\nasdfasdf\r\n");
+		if (req.head.httpver == HTTPV_10) break;
+		else if (req.head.httpver == HTTPV_11) continue;
+		else break;
 	}
 
-closeConn:
-	free(line);
+
+closeHandler:
+	printf("Conn closed %d\n", fileno(stream));
 }
+
+
 
 int main(int argc, char *argv[]) 
 {

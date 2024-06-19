@@ -1,3 +1,10 @@
+#ifndef HTTP_REQ_H
+#define HTTP_REQ_H
+
+#include <search.h>
+#include "utils.h"
+#include <stdio.h>
+
 #ifndef HTTP_HEAD_H
 #define HTTP_HEAD_H
 
@@ -23,14 +30,38 @@
 #define HTTPM_POST 3
 
 /**
-* Parses an http request method. 
+* Parses an HTTP request method. 
 *
-* @method_str null-terminated string containing request method.
-* @Returns HTTPM_FAILED on failure or one of HTTP_METHOD defined values otherwise.
+* @Method_str null-terminated string containing request method.
+* @Returns HTTPM_FAILED on failure or one of HTTPM_ defined values otherwise.
 */
 int parseHTTPMethod(const char *method_str);
 
 #endif /* HTTP_METHOD_H */
+
+/**
+ * This sections lists possible HTTP versions.
+ */
+#ifndef HTTPVER_H
+#define HTTPVER_H
+
+/**
+ * Invalid HTTP version indicator.
+ */
+#define HTTPV_INVAL -1
+#define HTTPV_10 10
+#define HTTPV_11 11
+
+
+/**
+* Parses an HTTP version. (e.g. HTTP/1.0)
+*
+* @version_str null-terminated string containing HTTP version.
+* @Returns HTTPV_INVAL on failure or one of HTTPV_ defined values otherwise.
+*/
+int parseHTTPVersion(const char *version_str);
+
+#endif /* HTTPVER_H */
 
 struct httpHead {
 	int method;
@@ -57,3 +88,71 @@ int parseHTTPHead(const char *line, struct httpHead *res);
  */
 ssize_t deleteNLSignature(char *line);
 #endif /* HTTP_HEAD_H */
+
+struct HTTPHeader {
+	char *key;
+	char *value;
+};
+
+/**
+ * Parses http header (key: value\r\n) from string line.
+ * 
+ * @line (crlf- or lf-) and null- terminated string line.
+ * @res Pointer to HTTPHeader structure.
+ *
+ * @Returns parsing status: 0 on success, -1 otherwise.
+ */
+int parseHTTPHeader(const char *line, struct HTTPHeader *res);
+/**
+ * Deallocates memory of HTTPHeader.
+ *
+ * @header Pointer to HTTPHeader structure.
+ */
+void destroyHTTPHeader(struct HTTPHeader *header);
+
+/**
+ * Returns matching http header.
+ *
+ * @headers vector_p of HTTPHeader structures.
+ * @key Header key
+ *
+ * @Returns HTTP header value or NULL if header is undefined.
+ */
+char *getHTTPHeader_p(struct vector_p *headers, char *key);
+
+struct HTTPRequest {
+	struct httpHead head;
+	/**
+	 * Vector of struct HTTPHeader 
+	 */
+	struct vector_p headers;
+
+	char *body;
+	size_t bodyc;
+};
+
+/**
+ * Indicates that end of file reached and connection should be closed.
+ */
+#define HTTPREQ_EOF 1
+#define HTTPREQ_SUCCESS 0
+#define HTTPREQ_FAILED -1
+
+/**
+ * Reads for HTTP request in stream. 
+ *
+ * @stream "r"-flagged stdio stream. Notice that the cursor position will be changed. 
+ * After request handling it will be pointing to the start of next HTTP request. Function is blocking and waiting for input.
+ *
+ * @req A pointer to HTTPRequest structure where new request is stored.
+ *
+ * @Returns One of HTTPREQ_ defines statuses. Notice that res should be destroyHTTPRequest()-ed EVEN AFTER error.
+ */
+int parseHTTPRequest(FILE *stream, struct HTTPRequest *res);
+
+/**
+ * Frees HTTPRequest structure.
+ */
+void destroyHTTPRequest(struct HTTPRequest *req);
+
+#endif /* HTTP_REQ_H */
