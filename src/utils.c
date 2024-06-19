@@ -11,10 +11,8 @@ int initVector(struct vector *vec, size_t startCapacity) {
 	vec->capacity = startCapacity;
 
 	vec->arr = malloc(sizeof(void *) * startCapacity);
-	vec->lock = malloc(sizeof(pthread_mutex_t));
-	
 
-	if (vec->arr == NULL || vec->lock == NULL || pthread_mutex_init(vec->lock, NULL)) {
+	if (vec->arr == NULL || pthread_mutex_init(&vec->lock, NULL)) {
 		return -1;
 	}
 
@@ -34,7 +32,7 @@ void growVector(struct vector *vec) {
 	vec->arr = tmp;
 }
 size_t insertVector(struct vector *vec, void *el) {
-	pthread_mutex_lock(vec->lock);
+	pthread_mutex_lock(&vec->lock);
 
 	if (vec->size == vec->capacity) {
 		growVector(vec);
@@ -43,29 +41,121 @@ size_t insertVector(struct vector *vec, void *el) {
 	vec->arr[vec->size] = el;
 	size_t i = vec->size++;
 
-	pthread_mutex_unlock(vec->lock);
+	pthread_mutex_unlock(&vec->lock);
 
 	return i;
 }
 void *vectorGetEl(struct vector *vec, size_t i) {
-	pthread_mutex_lock(vec->lock);
+	pthread_mutex_lock(&vec->lock);
 
 	void *el = vec->arr[i];
 
-	pthread_mutex_unlock(vec->lock);
+	pthread_mutex_unlock(&vec->lock);
 
 	return el; 
 }
 
 void vectorSetEl(struct vector *vec, size_t i, void *el) {
-	pthread_mutex_lock(vec->lock);
+	pthread_mutex_lock(&vec->lock);
 
 	void **elp = vec->arr + i;
 	*elp = el;
 
-	pthread_mutex_unlock(vec->lock);
+	pthread_mutex_unlock(&vec->lock);
 }
 
+void vectorDestroy(struct vector *vec) {
+	free(vec->arr);
+	pthread_mutex_destroy(&vec->lock);
+
+	vec->arr = NULL;
+	vec->size = 0;
+	vec->capacity = 0;
+}
+
+
+int initVector_p(struct vector_p *vec, size_t elsz, size_t startCapacity) {
+	memset(vec, 0, sizeof(struct vector));
+	vec->capacity = startCapacity;
+	vec->elsz = elsz;
+
+	vec->arr = malloc(elsz * startCapacity);
+
+	if (vec->arr == NULL || pthread_mutex_init(&vec->lock, NULL)) {
+		return -1;
+	}
+
+
+	return 0;
+}
+void growVector_p(struct vector_p *vec) {
+	vec->capacity *= 2;
+	char *tmp = realloc(vec->arr, vec->elsz * vec->capacity);
+
+	if (tmp == NULL) {
+		vectorDestroy_p(vec);
+		raise(SIGTERM);
+		return;
+	}
+
+	vec->arr = tmp;
+}
+
+inline char *vectorElPtr_p(struct vector_p *vec, size_t i)
+{
+	return vec->arr + i * vec->elsz;
+}
+
+size_t insertVector_p(struct vector_p *vec, char *el) {
+	pthread_mutex_lock(&vec->lock);
+
+	if (vec->size == vec->capacity) {
+		growVector_p(vec);
+	}
+
+	size_t i = vec->size++;
+	memcpy(vectorElPtr_p(vec, i), el, vec->elsz);
+
+	pthread_mutex_unlock(&vec->lock);
+
+	return i;
+}
+char *vectorGetEl_p(struct vector_p *vec, size_t i) {
+	pthread_mutex_lock(&vec->lock);
+
+	char *el = vectorElPtr_p(vec, i);
+
+	pthread_mutex_unlock(&vec->lock);
+
+	return el; 
+}
+
+void vectorCopyEl_p(struct vector_p *vec, size_t i, char *buf) {
+	pthread_mutex_lock(&vec->lock);
+
+	char *el = vectorElPtr_p(vec, i);
+	memcpy(buf, el, vec->elsz);
+
+	pthread_mutex_unlock(&vec->lock);
+}
+
+void vectorSetEl_p(struct vector_p *vec, size_t i, char *el) {
+	pthread_mutex_lock(&vec->lock);
+
+	memcpy(vectorElPtr_p(vec, i), el, vec->elsz);
+
+	pthread_mutex_unlock(&vec->lock);
+}
+
+void vectorDestroy_p(struct vector_p *vec) {
+	free(vec->arr);
+	pthread_mutex_destroy(&vec->lock);
+
+	vec->arr = NULL;
+	vec->size = 0;
+	vec->elsz = 0;
+	vec->capacity = 0;
+}
 
 int parseArgs(int argc, char *argv[], struct args_t *res)
 {
