@@ -99,14 +99,23 @@ struct ApplicationContext getContext();
 int startServer();
 
 /**
- * Creates new socket and binds it.
+ * Create new socket.
  *
  * @res A pointer to sock to be bound.
  * @sockdata Data used to create socket.
  *
  * @Returns Socket creation status: 0 on success, -1 + errno otherwise.
  */
-int bindSocket(struct ssock *res, struct isock sockdata);
+int createSocket(struct ssock *res, struct isock sockdata);
+
+/**
+ * Binds a socket to sockaddr.
+ *
+ * @socket Socket structure.
+ *
+ * @Returns Socket binding status: 0 on success, -1 + errno otherwise.
+ */
+int bindSocket(struct ssock socket);
 
 /**
  * Simplifies creation of the unix socket (constructs struct isock).

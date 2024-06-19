@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,7 +79,7 @@ error:
 }
 
 
-int bindSocket(struct ssock *res, struct isock sockdata)
+int createSocket(struct ssock *res, struct isock sockdata)
 {
 	int fd = socket(sockdata.socket_family, sockdata.socket_type, sockdata.protocol);
 
@@ -91,8 +90,21 @@ int bindSocket(struct ssock *res, struct isock sockdata)
 		goto error;
 	}
 
+	errno = 0;
 
-	if (bind(fd, sockdata.addr, sockdata.addrlen)) {
+	memset(res, 0, sizeof(struct ssock));
+	res->fd = fd;
+	res->addr = sockdata.addr;
+	res->addrlen = sockdata.addrlen;
+
+	return 0;
+error:
+	return -1;
+}
+
+int bindSocket(struct ssock socket)
+{
+	if (bind(socket.fd, socket.addr, socket.addrlen)) {
 		int err = errno;
 		perror("Unable to bind socket to the given address");
 		errno = err;
@@ -101,12 +113,6 @@ int bindSocket(struct ssock *res, struct isock sockdata)
 	}
 
 	errno = 0;
-
-	memset(res, 0, sizeof(struct ssock));
-	res->fd = fd;
-	res->addr = sockdata.addr;
-	res->addrlen = sockdata.addrlen;
-
 	return 0;
 error:
 	return -1;
@@ -142,7 +148,17 @@ int bindUnixSocket(struct ssock *res, char *sockpath) {
 	sockdata.addr = (struct sockaddr *)addr;
 	sockdata.addrlen = sizeof(*addr);
 
-	return bindSocket(res, sockdata);
+	if (createSocket(res, sockdata))
+		goto error;
+
+	if (bindSocket(*res)) {
+		int err = errno;
+		close(res->fd);
+		errno = err;
+		goto error;
+	}
+
+	return 0;
 
 error:
 	return -1;
@@ -165,7 +181,31 @@ int bindTCPSocket(struct ssock *res, in_port_t sin_port, struct in_addr sin_addr
 	sockdata.addr = (struct sockaddr *)addr;
 	sockdata.addrlen = sizeof(*addr);
 
-	return bindSocket(res, sockdata);
+
+	if (createSocket(res, sockdata))
+		goto error;
+
+	int reuse = 1;
+	if (
+		setsockopt(res->fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse))
+#ifdef SO_REUSEPORT
+		|| setsockopt(res->fd, SOL_SOCKET, SO_REUSEPORT, (const char *)&reuse, sizeof(reuse))
+#endif
+	) {
+		int err = errno;
+		close(res->fd);
+		errno = err;
+		goto error;
+	}
+
+	if (bindSocket(*res)) {
+		int err = errno;
+		close(res->fd);
+		errno = err;
+		goto error;
+	}
+
+	return 0;
 error:
 	return -1;
 }
