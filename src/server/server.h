@@ -129,7 +129,7 @@ int bindSocket(struct ssock socket);
  *
  * @Returns Socket creation status: 0 on success, -1 + errno otherwise.
  */
-int bindUnixSocket(struct ssock *res, char *sockpath);
+int bindUnixSocket(struct ssock *res, const char *sockpath);
 
 /**
  * Simplifies creation of the TCP socket (constructs struct isock).

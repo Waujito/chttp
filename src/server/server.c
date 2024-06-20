@@ -118,7 +118,7 @@ error:
 	return -1;
 }
 
-int bindUnixSocket(struct ssock *res, char *sockpath) {
+int bindUnixSocket(struct ssock *res, const char *sockpath) {
 	struct isock sockdata = {
 		.socket_family = AF_UNIX,
 		.socket_type = SOCK_STREAM,

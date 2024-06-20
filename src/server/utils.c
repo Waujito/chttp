@@ -157,7 +157,7 @@ void vectorDestroy_p(struct vector_p *vec) {
 	vec->capacity = 0;
 }
 
-int parseArgs(int argc, char *argv[], struct args_t *res)
+int parseArgs(int argc, const char *argv[], struct args_t *res)
 {
 	memset(res, 0, sizeof(*res));
 
@@ -174,7 +174,7 @@ int parseArgs(int argc, char *argv[], struct args_t *res)
 			TCPc++;
 	}
 
-	char **unixSocks = malloc(sizeof(char *) * unixc);
+	const char **unixSocks = malloc(sizeof(char *) * unixc);
 	struct in_addr *TCPAddrs = malloc(sizeof(struct in_addr) * TCPc);
 	int *TCPPorts = malloc(sizeof(int *) * TCPc);
 
@@ -184,7 +184,7 @@ int parseArgs(int argc, char *argv[], struct args_t *res)
 	int usi = 0;
 	int tci = 0;
 	for (int i = 1; i < argc; i++) {
-		char *data = argv[i];
+		const char *data = argv[i];
 		if (inSched) {
 			if (inType == 'U') {
 				unixSocks[usi++] = data;
@@ -193,7 +193,7 @@ int parseArgs(int argc, char *argv[], struct args_t *res)
 				int asz = 0;
 
 				// Pointer to pos where ip port string starts.
-				char *portp;
+				const char *portp;
 
 				int datalen = strlen(data);
 

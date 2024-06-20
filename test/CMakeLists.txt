@@ -9,6 +9,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(chttp_test
 	httpParser.cc
 	vectorsTest.cc
+	appArgsTest.cc
 )
 
 target_link_libraries(chttp_test

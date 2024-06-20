@@ -86,7 +86,7 @@ void vectorDestroy_p(struct vector_p *vec);
  * Stores program args.
  */
 struct args_t {
-	char **unixSocks;
+	const char **unixSocks;
 	int unixc;
 
 	struct in_addr *TCPAddrs;
@@ -97,7 +97,7 @@ struct args_t {
 /**
  * Parses program args.
  */
-int parseArgs(int argc, char *argv[], struct args_t *res);
+int parseArgs(int argc, const char *argv[], struct args_t *res);
 
 
 #ifdef __cplusplus
