@@ -14,3 +14,6 @@ target_compile_definitions(chttp_compiler_flags INTERFACE
 configure_file(CHTTPConfig.h.in CHTTPConfig.h)
 
 add_subdirectory(src)
+
+enable_testing()
+add_subdirectory(test)

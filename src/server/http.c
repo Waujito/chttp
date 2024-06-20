@@ -47,7 +47,7 @@ int parseHTTPVersion(const char *version_str)
 
 ssize_t deleteNLSignature(char *line) {
 	size_t lineLen = strlen(line);
-	if (line[lineLen - 2] == '\r' || line[lineLen - 1] == '\n') {
+	if (line[lineLen - 2] == '\r' && line[lineLen - 1] == '\n') {
 		line[lineLen - 2] = '\0';
 		lineLen -= 2;
 	} else if (line[lineLen - 1] == '\n') {
@@ -102,7 +102,7 @@ int parseHTTPHead(const char *line, struct httpHead *res)
 		} else if (reqprocess_state == HEADPROCESS_HTTPV) {
 			httpver = parseHTTPVersion(token);
 
-			if (method == HTTPV_INVAL) {
+			if (httpver == HTTPV_INVAL) {
 				printf("HTTP invalid version\n");
 				errno = EINVAL;
 				goto parsingError;
@@ -273,5 +273,12 @@ error:
 
 void destroyHTTPRequest(struct HTTPRequest *req)
 {
+	for (size_t i = 0; i < req->headers.size; i++) {
+		struct HTTPHeader header;
+		vectorCopyEl_p(&req->headers, i, (char *)&header);
+
+		destroyHTTPHeader(&header);
+	}
 	free(req->body);
+	vectorDestroy_p(&req->headers);
 }

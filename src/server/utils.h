@@ -2,6 +2,10 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <pthread.h>
 
 /**
@@ -94,5 +98,10 @@ struct args_t {
  * Parses program args.
  */
 int parseArgs(int argc, char *argv[], struct args_t *res);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* UTILS_H */

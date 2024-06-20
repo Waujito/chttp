@@ -1,6 +1,10 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -185,5 +189,9 @@ void handlerCallback(int sig);
  */
 int initSighandler();
 
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SERVER_H */

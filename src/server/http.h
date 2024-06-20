@@ -1,6 +1,10 @@
 #ifndef HTTP_REQ_H
 #define HTTP_REQ_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <search.h>
 #include "utils.h"
 #include <stdio.h>
@@ -83,6 +87,11 @@ int parseHTTPHead(const char *line, struct httpHead *res);
 /**
  * Deletes LF or CRLF signature from line.
  *
+ * As specified CRLF signature MUST present in each HTTP request.
+ * But I think there is nothing bad if we also make ability to pass LF Unix signature without any error.
+ * (This use case should be avoided by the client, but it is OK if client uses something like ncat without crlf flag.)
+ *
+ *
  * @line Null-terminated line with LF or CRLF sign.
  * @Returns line size of -1 if no signature detected.
  */
@@ -99,6 +108,7 @@ struct HTTPHeader {
  * 
  * @line (crlf- or lf-) and null- terminated string line.
  * @res Pointer to HTTPHeader structure.
+ * Note that on success status HTTPHeader should be destroyHTTPHeader()-ed
  *
  * @Returns parsing status: 0 on success, -1 otherwise.
  */
@@ -154,5 +164,10 @@ int parseHTTPRequest(FILE *stream, struct HTTPRequest *res);
  * Frees HTTPRequest structure.
  */
 void destroyHTTPRequest(struct HTTPRequest *req);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* HTTP_REQ_H */
