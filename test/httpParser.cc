@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <cstring>
-#include "../src/server/http.h"
+#include "server/http.h"
 
 char *stringToCharArr(std::string sline) {
 	char *line = (char *)malloc(sizeof(char) * (strlen(sline.c_str()) + 1));

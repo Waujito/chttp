@@ -8,11 +8,15 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(chttp_test
 	httpParser.cc
+	vectorsTest.cc
 )
 
 target_link_libraries(chttp_test
 	GTest::gtest_main
 	chttpserv
+)
+target_include_directories(chttp_test
+	PUBLIC ../src
 )
 
 include(GoogleTest)
