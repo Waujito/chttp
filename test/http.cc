@@ -164,3 +164,43 @@ TEST(HTTPparse, HTTPRequest) {
 
 }
 
+TEST(HTTP, ResponseWriter) {
+	FILE *stream = tmpfile();
+	struct vector_p headers;
+	createHTTPHeaderVector(&headers);
+	addKVHTTPHeader_p(&headers, "Authorization", "Bearer");
+
+	const char *body = "abcdefghjk\r\n";
+	size_t bodyc = strlen(body);
+	struct HTTPResponse response = {
+		HTTPV_11,
+		200,
+		&headers,
+		bodyc,
+		body,
+	};
+
+	writeHTTPResponse(&response, stream);
+	fseek(stream, 0, SEEK_SET);
+
+	char *line = NULL;
+	size_t lineLen = 0;
+
+	getline(&line, &lineLen, stream);
+	ASSERT_STREQ(line, "HTTP/1.1 200 OK\r\n");
+
+	getline(&line, &lineLen, stream);
+	ASSERT_STREQ(line, "Authorization: Bearer\r\n");
+
+	getline(&line, &lineLen, stream);
+	ASSERT_STREQ(line, "Content-Length: 12\r\n");
+
+	getline(&line, &lineLen, stream);
+	ASSERT_STREQ(line, "\r\n");
+
+	getline(&line, &lineLen, stream);
+	ASSERT_STREQ(line, body);
+
+	free(line);
+	destroyHTTPHeaderVector(&headers);
+}

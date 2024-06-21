@@ -57,7 +57,7 @@ int parseHTTPVersion(const char *version_str);
 /**
  * @Retruns string version from one provided with defines. (NULL if version not valid).
  */
-const char *getHTTPVersion(int version);
+const char *HTTPVersionToString(int version);
 
 struct HTTPHead {
 	int method;
@@ -149,9 +149,13 @@ ssize_t findHTTPHeader_p(struct vector_p *headers, const char *key);
 char *getHTTPHeader_p(struct vector_p *headers, const char *key);
 /**
  * Inserts HTTPHeader structure into headers vector. 
- * If header key is already specified resetts it.
+ * If header key is already specified resets it.
  */
 int addHTTPHeader_p(struct vector_p *headers, struct HTTPHeader *header);
+/**
+ * Adds http header to headers array but also constructs it from key-value pair.
+ */
+int addKVHTTPHeader_p(struct vector_p *headers, const char *key, const char *value);
 /**
  * Deletes HTTPHeader from headers array. (In fact setts header value to NULL).
  * @Returns 0 on successfull delete, -1 if element was not found.
@@ -202,6 +206,26 @@ int parseHTTPRequest(FILE *stream, struct HTTPRequest *res);
  */
 void destroyHTTPRequest(struct HTTPRequest *req);
 
+
+struct HTTPResponse {
+	int httpver;
+	int status;
+	struct vector_p *headers;
+	size_t bodyc;
+	const char *body;
+};
+
+/**
+ * Returns response status description (e.g. `OK` on 200 status). NULL if status is not defined.
+ */
+const char *responseStatusDesc(int status);
+
+/**
+ * Writes HTTPResponse to stream. Notice that on errors buffer may be corrupted (semi-writte).
+ *
+ * @Returns HTTPResponse writing status: 0 on success, -1 otherwise.
+ */
+int writeHTTPResponse(struct HTTPResponse *response, FILE *stream);
 
 #ifdef __cplusplus
 }

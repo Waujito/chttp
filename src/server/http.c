@@ -40,7 +40,7 @@ int parseHTTPVersion(const char *version_str)
 	}
 }
 
-const char *getHTTPVersion(int version)
+const char *HTTPVersionToString(int version)
 {
 	if (version == HTTPV_11) {
 		return "HTTP/1.1";
@@ -247,6 +247,17 @@ int addHTTPHeader_p(struct vector_p *headers, struct HTTPHeader *header) {
 
 	return 0;
 }
+inline int addKVHTTPHeader_p(struct vector_p *headers, const char *key, const char *value) {
+	struct HTTPHeader header;
+	if (buildHTTPHeader(&header, key, value))
+		return -1;
+	if (addHTTPHeader_p(headers, &header)) {
+		destroyHTTPHeader(&header);
+		return -1;
+	}
+
+	return 0;
+}
 
 int deleteHTTPHeader_p(struct vector_p *headers, const char *key) {
 	ssize_t i = findHTTPHeader_p(headers, key);
@@ -379,4 +390,52 @@ void destroyHTTPRequest(struct HTTPRequest *req)
 	free(req->body);
 	vectorDestroy_p(&req->headers);
 	free(req->path);
+}
+
+const char *responseStatusDesc(int status)
+{
+	switch (status) {
+		case 200:
+		return "OK";
+		break;
+		
+		default:
+		return NULL;
+		break;
+	}
+}
+
+int writeHTTPResponse(struct HTTPResponse *response, FILE *stream) 
+{
+	const char *httpvs = HTTPVersionToString(response->httpver);
+	if (httpvs == NULL)
+		goto error;
+
+	const char *statusDesc = responseStatusDesc(response->status);
+
+	if (statusDesc != NULL) {
+		fprintf(stream, "%s %d %s\r\n", httpvs, response->status, statusDesc);
+	} else {
+		fprintf(stream, "%s %d\r\n", httpvs, response->status);
+	}
+
+	if (response->bodyc != 0) {
+		char bodycs[24];
+		sprintf(bodycs, "%zu", response->bodyc);
+
+		addKVHTTPHeader_p(response->headers, "Content-Length", bodycs);
+	}
+
+	for (size_t i = 0; i < response->headers->size; i++) {
+		struct HTTPHeader header;
+		vectorCopyEl_p(response->headers, i, (char *)&header);
+		fprintf(stream, "%s: %s\r\n", header.key, header.value);
+	}
+	fprintf(stream, "\r\n");
+
+	if (fwrite(response->body, sizeof(char), response->bodyc, stream) < response->bodyc)
+		goto error;
+
+error:
+	return -1;
 }
