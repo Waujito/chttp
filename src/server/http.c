@@ -301,7 +301,6 @@ keepProcess:
 		goto error;
 
 	bodyc = contentSZ;
-	printf("%zu\n", bodyc);
 
 processBody:
 	if (bodyc != 0) {
@@ -440,11 +439,13 @@ void httpConnetionHandler(FILE *stream, void *rawargs)
 		}
 
 		args->httpRequestProcessor(&req, &resp);
+		destroyHTTPRequest(&req);
 
 		if (writeHTTPResponse(&resp, stream)) {
 			printf("HTTP Response is invalid: %s\n", strerror(errno));
 			goto closeHandler;
 		}
+		destroyHTTPResponse(&resp);
 
 		if (req.httpver == HTTPV_10) break;
 		else if (req.httpver == HTTPV_11) continue;

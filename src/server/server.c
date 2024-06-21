@@ -26,8 +26,26 @@
 */
 struct vector registeredApplications;
 
+/**
+* Specifies basic thread attributes for connection and socket threads.
+*/
+pthread_attr_t baseThreadAttr;
+
+
+
+
 int initApplication() {
+
+	if (	pthread_attr_init(&baseThreadAttr) || 
+		pthread_attr_setdetachstate(&baseThreadAttr, PTHREAD_CREATE_DETACHED)) {
+
+		perror("Unable to init attrs");
+		goto error;
+	}
+
 	return initVector(&registeredApplications, 2);
+error:
+	return -1;
 }
 
 size_t registerApplication(struct ApplicationContext *context) {
@@ -287,16 +305,6 @@ void *socketListener(void *rawSLContext)
 	}
 
 
-
-	pthread_attr_t thattr;
-	if (	pthread_attr_init(&thattr) || 
-		pthread_attr_setdetachstate(&thattr, PTHREAD_CREATE_DETACHED)) {
-
-		perror("Unable to init attrs");
-		goto error;
-	}
-
-
 	while (1) {
 		int nfd = accept(sock.fd, sock.addr, &sock.addrlen);
 
@@ -323,7 +331,7 @@ void *socketListener(void *rawSLContext)
 		clContext->cip = ci;
 		clContext->context = context;
 
-		if (pthread_create(cthread, &thattr, connListener, clContext))
+		if (pthread_create(cthread, &baseThreadAttr, connListener, clContext))
 			goto connError;
 
 
@@ -333,8 +341,6 @@ connError:
 		perror("Unable to accept new connection");
 		break;
 	}
-
-	pthread_attr_destroy(&thattr);
 
 error:
 	return NULL;
@@ -356,6 +362,7 @@ int closeServer(struct ClosingContext closeContext)
 		if (sockThread == NULL) continue;
 
 		pthread_cancel(*sockThread);
+		pthread_join(*sockThread, NULL);
 
 		free(sockThread);
 		*scpt = NULL;
@@ -444,6 +451,7 @@ int closeApplication(int sig) {
 	}
 
 	vectorDestroy(&registeredApplications);
+	pthread_attr_destroy(&baseThreadAttr);
 
 	return closeStatus;
 }

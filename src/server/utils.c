@@ -253,8 +253,6 @@ int parseArgs(int argc, const char *argv[], struct args_t *res)
 	res->unixSocks = unixSocks;
 	res->unixc = unixc;
 
-	printf("%d %d\n", unixc, TCPc);
-
 	return 0;
 
 error:
