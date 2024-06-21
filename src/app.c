@@ -7,6 +7,13 @@
 #include <unistd.h>
 #include "http.h"
 
+void httpRequestProcessor(struct HTTPRequest *request, struct HTTPResponse *response) 
+{
+	response->status = 200;
+	addKVHTTPHeader_p(&response->headers, "Server", "chttp");
+	response->body = "Hello there\r\n";
+	response->bodyc = strlen(response->body);
+}
 
 #define HTTPHEAD_PROCESSING 0
 #define HTTPHEADERS_PROCESSING 1
@@ -17,9 +24,10 @@ void connhandler(FILE *stream)
 {
 	printf("Got new connection on file %d\n", fileno(stream));
 
-	struct HTTPRequest req;
 	while (!feof(stream)) {
 		printf("Got new request on stream %d\n", fileno(stream));
+
+		struct HTTPRequest req;
 		int status = parseHTTPRequest(stream, &req);
 
 		if (status == HTTPREQ_FAILED) {
@@ -33,16 +41,19 @@ void connhandler(FILE *stream)
 			goto closeHandler;
 		}
 
-		for (size_t i = 0; i < req.headers.size; i++) {
-			struct HTTPHeader header;
-			vectorCopyEl_p(&req.headers, i, (char *)&header);
-			printf("%s: %s\n", header.key, header.value);
+		struct HTTPResponse resp;
+		if (initHTTPResponse(&resp, req.httpver)) {
+			destroyHTTPRequest(&req);
+			goto closeHandler;
 		}
 
-		printf("%s\n", req.body);
+		httpRequestProcessor(&req, &resp);
 
-		destroyHTTPRequest(&req);
-		fprintf(stream, "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nContent-Type: text/plain\r\nContent-Length:10\r\n\r\nasdfasdf\r\n");
+		if (writeHTTPResponse(&resp, stream)) {
+			printf("HTTP Response is invalid: %s\n", strerror(errno));
+			goto closeHandler;
+		}
+
 		if (req.httpver == HTTPV_10) break;
 		else if (req.httpver == HTTPV_11) continue;
 		else break;

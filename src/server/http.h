@@ -210,7 +210,7 @@ void destroyHTTPRequest(struct HTTPRequest *req);
 struct HTTPResponse {
 	int httpver;
 	int status;
-	struct vector_p *headers;
+	struct vector_p headers;
 	size_t bodyc;
 	const char *body;
 };
@@ -220,6 +220,19 @@ struct HTTPResponse {
  */
 const char *responseStatusDesc(int status);
 
+/**
+ * Initializes HTTP Response structure with blank data
+ *
+ * @response Pointer to HTTP Response structure being initialized.
+ * @httpver Version of HTTP protocol in use.
+ *
+ * @Returns Initialization status: 0 on success, -1 on failure.
+ */
+int initHTTPResponse(struct HTTPResponse *response, int httpver);
+/**
+ * Deallocates memory of http response structure.
+ */
+void destroyHTTPResponse(struct HTTPResponse *response);
 /**
  * Writes HTTPResponse to stream. Notice that on errors buffer may be corrupted (semi-writte).
  *

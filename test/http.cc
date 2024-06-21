@@ -161,24 +161,22 @@ TEST(HTTPparse, HTTPRequest) {
 
 	ASSERT_EQ(parseHTTPRequest(stream, &req), -1);
 	destroyHTTPRequest(&req);
-
+	fclose(stream);
 }
 
 TEST(HTTP, ResponseWriter) {
 	FILE *stream = tmpfile();
-	struct vector_p headers;
-	createHTTPHeaderVector(&headers);
-	addKVHTTPHeader_p(&headers, "Authorization", "Bearer");
+	struct HTTPResponse response;
+	initHTTPResponse(&response, HTTPV_11);
+
+	addKVHTTPHeader_p(&response.headers, "Authorization", "Bearer");
 
 	const char *body = "abcdefghjk\r\n";
 	size_t bodyc = strlen(body);
-	struct HTTPResponse response = {
-		HTTPV_11,
-		200,
-		&headers,
-		bodyc,
-		body,
-	};
+
+	response.status = 200;
+	response.bodyc = bodyc;
+	response.body = body;
 
 	writeHTTPResponse(&response, stream);
 	fseek(stream, 0, SEEK_SET);
@@ -202,5 +200,6 @@ TEST(HTTP, ResponseWriter) {
 	ASSERT_STREQ(line, body);
 
 	free(line);
-	destroyHTTPHeaderVector(&headers);
+	destroyHTTPResponse(&response);
+	fclose(stream);
 }

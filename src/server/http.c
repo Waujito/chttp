@@ -405,11 +405,33 @@ const char *responseStatusDesc(int status)
 	}
 }
 
+int initHTTPResponse(struct HTTPResponse *response, int httpver) {
+	memset(response, 0, sizeof(struct HTTPResponse));
+
+	if (createHTTPHeaderVector(&response->headers))
+		return -1;
+
+	response->httpver = httpver;
+	response->bodyc = 0;
+	response->body = NULL;
+
+	return 0;
+}
+void destroyHTTPResponse(struct HTTPResponse *response) {
+	destroyHTTPHeaderVector(&response->headers);
+}
+
 int writeHTTPResponse(struct HTTPResponse *response, FILE *stream) 
 {
 	const char *httpvs = HTTPVersionToString(response->httpver);
-	if (httpvs == NULL)
+	if (httpvs == NULL) {
+		errno = EINVAL;
 		goto error;
+	}
+	if (response->status == 0) {
+		errno = EINVAL;
+		goto error;
+	}
 
 	const char *statusDesc = responseStatusDesc(response->status);
 
@@ -419,22 +441,25 @@ int writeHTTPResponse(struct HTTPResponse *response, FILE *stream)
 		fprintf(stream, "%s %d\r\n", httpvs, response->status);
 	}
 
-	if (response->bodyc != 0) {
-		char bodycs[24];
-		sprintf(bodycs, "%zu", response->bodyc);
+	// https://www.w3.org/Protocols/HTTP/1.0/draft-ietf-http-spec.html#BodyLength
+	char bodycs[24];
+	sprintf(bodycs, "%zu", response->bodyc);
+	addKVHTTPHeader_p(&response->headers, "Content-Length", bodycs);
 
-		addKVHTTPHeader_p(response->headers, "Content-Length", bodycs);
-	}
-
-	for (size_t i = 0; i < response->headers->size; i++) {
+	for (size_t i = 0; i < response->headers.size; i++) {
 		struct HTTPHeader header;
-		vectorCopyEl_p(response->headers, i, (char *)&header);
+		vectorCopyEl_p(&response->headers, i, (char *)&header);
 		fprintf(stream, "%s: %s\r\n", header.key, header.value);
 	}
 	fprintf(stream, "\r\n");
 
-	if (fwrite(response->body, sizeof(char), response->bodyc, stream) < response->bodyc)
-		goto error;
+	if (response->bodyc != 0) 
+		if (fwrite(response->body, sizeof(char), response->bodyc, stream) < response->bodyc)
+			goto error;
+
+	fflush(stream);
+
+	return 0;
 
 error:
 	return -1;
