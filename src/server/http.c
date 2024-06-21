@@ -136,6 +136,8 @@ int parseHTTPHead(const char *line, struct HTTPHead *res)
 	res->path = path;
 	res->httpver = httpver;
 
+	malloc(1234);
+
 	errno = 0;
 	free(rreq);
 
