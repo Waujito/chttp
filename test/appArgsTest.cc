@@ -22,6 +22,8 @@ TEST(ParseArgs, ParsesNormally) {
 	ASSERT_EQ(args.TCPc, 1);
 	ASSERT_EQ(args.TCPAddrs[0].s_addr, htonl(2130706433U));
 	ASSERT_EQ(args.TCPPorts[0], 8888);
+
+	destroyArgs(&args);
 }
 
 TEST(ParseArgs, ParseError) {

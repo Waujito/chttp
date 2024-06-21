@@ -58,13 +58,17 @@ TEST(HTTPParse, HTTPHead) {
 	ASSERT_EQ(head.method, HTTPM_GET);
 	ASSERT_EQ(head.httpver, HTTPV_11);
 	ASSERT_STREQ(head.path, "/");
+	destroyHTTPHead(&head);
 	
 	ASSERT_EQ(parseHTTPHead("GET / HTTP/1.1\r", &head), -1);
+
 	ASSERT_EQ(parseHTTPHead("GET / HTTP/1.1\n", &head), 0);
+	destroyHTTPHead(&head);
 
 	ASSERT_EQ(parseHTTPHead("GETS / HTTP/1.1\r\n", &head), -1);
 	ASSERT_EQ(parseHTTPHead("GET HTTP/1.1\r\n", &head), -1);
 	ASSERT_EQ(parseHTTPHead("GET / HTTP/1.12\r\n", &head), -1);
+	errno = 0;
 	ASSERT_EQ(parseHTTPHead("GET \0 HTTP/1.1\r\n", &head), -1);
 	ASSERT_EQ(errno, EINVAL);
 }

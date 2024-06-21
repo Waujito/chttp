@@ -98,6 +98,10 @@ struct args_t {
  * Parses program args.
  */
 int parseArgs(int argc, const char *argv[], struct args_t *res);
+/**
+ * Destroys program args storage.
+ */
+void destroyArgs(struct args_t *args);
 
 
 #ifdef __cplusplus

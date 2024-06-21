@@ -77,7 +77,7 @@ ssize_t deleteNLSignature(char *line) {
 int parseHTTPHead(const char *line, struct HTTPHead *res)
 {
 	int method;
-	char *path;
+	char *path = NULL;
 	int httpver;
 
 	int err = 0;
@@ -140,8 +140,10 @@ int parseHTTPHead(const char *line, struct HTTPHead *res)
 	free(rreq);
 
 	return 0;
-
 parsingError:
+	if (path != NULL)
+		free(path);
+
 	err = errno;
 	free(rreq);
 	errno = err;

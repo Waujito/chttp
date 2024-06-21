@@ -162,7 +162,7 @@ int parseArgs(int argc, const char *argv[], struct args_t *res)
 	memset(res, 0, sizeof(*res));
 
 	if (argc < 2) 
-		goto error;
+		goto nonfree_err;
 
 	int unixc = 0;
 	int TCPc = 0;
@@ -218,11 +218,15 @@ int parseArgs(int argc, const char *argv[], struct args_t *res)
 
 				struct in_addr iaddr;
 
-				if (end - portp != datalen - asz - 1 || end == portp || !inet_aton(addrData, &iaddr))
+				if (end - portp != datalen - asz - 1 || end == portp || !inet_aton(addrData, &iaddr)) {
+					free(addrData);
       					goto error;
+				}
 
 				TCPPorts[tci] = port;
 				TCPAddrs[tci++] = iaddr;
+
+				free(addrData);
 			} else {
       				goto error;
       			}
@@ -254,6 +258,10 @@ int parseArgs(int argc, const char *argv[], struct args_t *res)
 	return 0;
 
 error:
+	free(unixSocks);
+	free(TCPAddrs);
+	free(TCPPorts);
+nonfree_err:
 	if (argc == 0) {
 		fprintf(stderr, "Invalid arguments. Accepted format: [-U </path/to/socket>...] [-T ip_addr:port...]\n");
 	} else {
@@ -262,4 +270,10 @@ error:
 	}
 
 	return -1;
+}
+
+void destroyArgs(struct args_t *args) {
+	free(args->TCPPorts);
+	free(args->TCPAddrs);
+	free(args->unixSocks);
 }
