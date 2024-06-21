@@ -17,3 +17,9 @@ add_subdirectory(src)
 
 enable_testing()
 add_subdirectory(test)
+
+add_custom_target(run
+	COMMAND ./chttp -T 127.0.0.1:8888
+	DEPENDS chttp
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
