@@ -1,24 +1,14 @@
-#ifndef HTTP_REQ_H
-#define HTTP_REQ_H
+#ifndef HTTP_H
+#define HTTP_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <search.h>
-#include "utils.h"
-#include <stdio.h>
-
-#ifndef HTTP_HEAD_H
-#define HTTP_HEAD_H
-
-#include <sys/types.h>
 /**
  * This section lists http methods defines.
  *
  */
-#ifndef HTTP_METHOD_H
-#define HTTP_METHOD_H
 
 /**
  * This variable passed when parser unable to determine the http request
@@ -41,14 +31,13 @@ extern "C" {
 */
 int parseHTTPMethod(const char *method_str);
 
-#endif /* HTTP_METHOD_H */
-
+#include <search.h>
+#include "utils.h"
+#include <stdio.h>
+#include <sys/types.h>
 /**
  * This sections lists possible HTTP versions.
  */
-#ifndef HTTPVER_H
-#define HTTPVER_H
-
 /**
  * Invalid HTTP version indicator.
  */
@@ -65,9 +54,12 @@ int parseHTTPMethod(const char *method_str);
 */
 int parseHTTPVersion(const char *version_str);
 
-#endif /* HTTPVER_H */
+/**
+ * @Retruns string version from one provided with defines. (NULL if version not valid).
+ */
+const char *getHTTPVersion(int version);
 
-struct httpHead {
+struct HTTPHead {
 	int method;
 	char *path;
 	int httpver;
@@ -77,11 +69,12 @@ struct httpHead {
  * Parses HTTP head line (GET / HTTP/1.1)
  *
  * @line crlf- null- terminated line of http request.
- * @res A pointer to httpHead structure which will be rewritten.
+ * @res A pointer to HTTPHead structure which will be rewritten.
  *
  * @Returns 0 if parsing was success, -1 otherwise.
  */
-int parseHTTPHead(const char *line, struct httpHead *res);
+int parseHTTPHead(const char *line, struct HTTPHead *res);
+void destroyHTTPHead(struct HTTPHead *head);
 
 
 /**
@@ -96,8 +89,15 @@ int parseHTTPHead(const char *line, struct httpHead *res);
  * @Returns line size of -1 if no signature detected.
  */
 ssize_t deleteNLSignature(char *line);
-#endif /* HTTP_HEAD_H */
 
+/*
+ * This section lists HTTPHeaders tools
+ */
+
+/**
+ * Represents an HTTP Header. To avoid Segmentation fault don't declare this structure. Use buildHTTPHeader() instead.
+ * If value is NULL headers is empty (not persist).
+ */
 struct HTTPHeader {
 	char *key;
 	char *value;
@@ -114,12 +114,30 @@ struct HTTPHeader {
  */
 int parseHTTPHeader(const char *line, struct HTTPHeader *res);
 /**
+ * Safely builds HTTPHeader structure. Allocates memory for structure and copies user-passed values.
+ * @res Pointer to blank structure to be created
+ * @key, @value - Key and Value of HTTP header respectively. Null-terminated strings.
+ *
+ * @Returns Status of build: 0 on success, -1 otherwise.
+ */
+int buildHTTPHeader(struct HTTPHeader *res, const char *key, const char *value);
+/**
  * Deallocates memory of HTTPHeader.
  *
  * @header Pointer to HTTPHeader structure.
  */
 void destroyHTTPHeader(struct HTTPHeader *header);
 
+/**
+ * Initializes storage for HTTP Headers.
+ */
+int createHTTPHeaderVector(struct vector_p *headers);
+
+/**
+ * Returns index of header with key in headers vector. Designed for thread-safety for internal use.
+ * When element is not found returns -1.
+ */
+ssize_t findHTTPHeader_p(struct vector_p *headers, const char *key);
 /**
  * Returns matching http header.
  *
@@ -128,10 +146,29 @@ void destroyHTTPHeader(struct HTTPHeader *header);
  *
  * @Returns HTTP header value or NULL if header is undefined.
  */
-char *getHTTPHeader_p(struct vector_p *headers, char *key);
+char *getHTTPHeader_p(struct vector_p *headers, const char *key);
+/**
+ * Inserts HTTPHeader structure into headers vector. 
+ * If header key is already specified resetts it.
+ */
+int addHTTPHeader_p(struct vector_p *headers, struct HTTPHeader *header);
+/**
+ * Deletes HTTPHeader from headers array. (In fact setts header value to NULL).
+ * @Returns 0 on successfull delete, -1 if element was not found.
+ */
+int deleteHTTPHeader_p(struct vector_p *headers, const char *key);
+/**
+ *
+ * Frees space for HTTP Header vector including the vector itself. 
+ * Notice that this function is not thread-safe!
+ */
+void destroyHTTPHeaderVector(struct vector_p *headers);
 
 struct HTTPRequest {
-	struct httpHead head;
+	int method;
+	char *path;
+	int httpver;
+
 	/**
 	 * Vector of struct HTTPHeader 
 	 */
@@ -156,7 +193,7 @@ struct HTTPRequest {
  *
  * @req A pointer to HTTPRequest structure where new request is stored.
  *
- * @Returns One of HTTPREQ_ defines statuses. Notice that res should be destroyHTTPRequest()-ed EVEN AFTER error.
+ * @Returns One of HTTPREQ_ defines statuses. 
  */
 int parseHTTPRequest(FILE *stream, struct HTTPRequest *res);
 
@@ -170,4 +207,4 @@ void destroyHTTPRequest(struct HTTPRequest *req);
 }
 #endif
 
-#endif /* HTTP_REQ_H */
+#endif /* HTTP_H */

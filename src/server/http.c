@@ -40,6 +40,17 @@ int parseHTTPVersion(const char *version_str)
 	}
 }
 
+const char *getHTTPVersion(int version)
+{
+	if (version == HTTPV_11) {
+		return "HTTP/1.1";
+	} else if (version == HTTPV_10) {
+		return "HTTP/1.0";
+	} else {
+		return NULL;
+	}
+}
+
 #define HEADPROCESS_METHOD 1
 #define HEADPROCESS_PATH 2
 #define HEADPROCESS_HTTPV 3
@@ -63,7 +74,7 @@ ssize_t deleteNLSignature(char *line) {
 	return lineLen;
 }
 
-int parseHTTPHead(const char *line, struct httpHead *res)
+int parseHTTPHead(const char *line, struct HTTPHead *res)
 {
 	int method;
 	char *path;
@@ -120,7 +131,7 @@ int parseHTTPHead(const char *line, struct httpHead *res)
 		goto parsingError;
 	}
 
-	memset(res, 0, sizeof(struct httpHead));
+	memset(res, 0, sizeof(struct HTTPHead));
 	res->method = method;
 	res->path = path;
 	res->httpver = httpver;
@@ -136,6 +147,10 @@ parsingError:
 	errno = err;
 error:
 	return -1;
+}
+void destroyHTTPHead(struct HTTPHead *head) 
+{
+	free(head->path);
 }
 
 int parseHTTPHeader(const char *line, struct HTTPHeader *res)
@@ -166,20 +181,93 @@ error:
 	return -1;
 }
 
+int buildHTTPHeader(struct HTTPHeader *res, const char *key, const char *value) {
+	size_t keylen = strlen(key);
+	size_t vallen = strlen(value);
+
+	// Header is contiguous key value line (name\0value\0)
+	size_t reslen = keylen + 1 + vallen + 1;
+	char *line = malloc(sizeof(char) * reslen);
+	if (line == NULL) return -1;
+
+	strcpy(line, key);
+	char *vline = line + keylen + 1;
+	strcpy(vline, value);
+
+	memset(res, 0, sizeof(struct HTTPHeader));
+	res->key = line;
+	res->value = vline;
+
+	return 0;
+}
+
 void destroyHTTPHeader(struct HTTPHeader *header) {
 	free(header->key);
 }	
 
-char *getHTTPHeader_p(struct vector_p *headers, char *key) {
+inline int createHTTPHeaderVector(struct vector_p *headers) {
+	return initVector_p(headers, sizeof(struct HTTPHeader), 2);
+}
+
+ssize_t findHTTPHeader_p(struct vector_p *headers, const char *key) {
 	for (size_t i = 0; i < headers->size; i++) {
 		struct HTTPHeader header;
-		vectorCopyEl_p(headers, i, (char *)&header);		
+		vectorCopyEl_p(headers, i, (char *)&header);
 		if (!strcmp(header.key, key)) {
-			return header.value;
+			return i;
 		}
 	}
 
-	return NULL;
+	return -1;
+}
+char *getHTTPHeader_p(struct vector_p *headers, const char *key) {
+	ssize_t i = findHTTPHeader_p(headers, key);
+	if (i == -1) {
+		return NULL;
+	}
+	struct HTTPHeader header;
+	vectorCopyEl_p(headers, i, (char *)&header);
+
+	return header.value;
+}
+
+int addHTTPHeader_p(struct vector_p *headers, struct HTTPHeader *header) {
+	ssize_t i = findHTTPHeader_p(headers, header->key);
+	if (i != -1) {
+		struct HTTPHeader oldHeader;
+		vectorCopyEl_p(headers, i, (char *)&oldHeader);
+		destroyHTTPHeader(&oldHeader);
+
+		vectorSetEl_p(headers, i, (char *)header);
+	} else {
+		vectorInsertEl_p(headers, (char *)header);
+	}
+
+	return 0;
+}
+
+int deleteHTTPHeader_p(struct vector_p *headers, const char *key) {
+	ssize_t i = findHTTPHeader_p(headers, key);
+	if (i != -1) {
+		struct HTTPHeader header;
+		// Since header is defined as contiguous char line (name\0value\0) this action is safe.
+		vectorCopyEl_p(headers, i, (char *)&header);
+		header.value = NULL;
+		vectorSetEl_p(headers, i, (char *)&header);
+
+		return 0;
+	} else {
+		return -1;
+	}
+}
+
+void destroyHTTPHeaderVector(struct vector_p *headers) {
+	for (size_t i = 0; i < headers->size; i++) {
+		struct HTTPHeader header;
+		vectorCopyEl_p(headers, i, (char *)&header);
+		destroyHTTPHeader(&header);	
+	}
+	vectorDestroy_p(headers);
 }
 
 #define HTTPHEAD_PROCESSING 0
@@ -191,19 +279,18 @@ int parseHTTPRequest(FILE *stream, struct HTTPRequest *res)
 {
 	memset(res, 0, sizeof(struct HTTPRequest));
 
-	struct httpHead head;
+	struct HTTPHead head;
 	struct vector_p headers;
 	char *body;
 	size_t bodyc;
 
-	initVector_p(&headers, sizeof(struct HTTPHeader), 2);
+	createHTTPHeaderVector(&headers);
 
 	char *line = NULL;
 	size_t nlineLen = 0;
 
 	int processing_state = HTTPHEAD_PROCESSING;  
 	while(getline(&line, &nlineLen, stream) != -1) {
-		// printf("%s", line);
 		if (processing_state == HTTPHEAD_PROCESSING) {
 			if (parseHTTPHead(line, &head)) {
 				printf("Unable to parse head\n");
@@ -220,13 +307,14 @@ int parseHTTPRequest(FILE *stream, struct HTTPRequest *res)
 				printf("Unable to parse header string: %s", line);
 				goto error;
 			} else {
-				vectorInsertEl_p(&headers, (char *)&header);
+				addHTTPHeader_p(&headers, &header);
 			}
 		} 
 	}
 
 	if (feof(stream) && processing_state == HTTPHEAD_PROCESSING) {
 		free(line);
+		destroyHTTPHeaderVector(&headers);
 		return HTTPREQ_EOF;
 	}
 	printf("Request processing failed\n");
@@ -248,17 +336,23 @@ keepProcess:
 	printf("%zu\n", bodyc);
 
 processBody:
-	body = malloc(sizeof(char) * bodyc);
-	if (body == NULL) goto error;
+	if (bodyc != 0) {
+		body = malloc(sizeof(char) * (bodyc + 1));
+		if (body == NULL) goto error;
 
-	if (fread(body, sizeof(char), bodyc, stream) != bodyc) {
-		printf("Unable to read %zu bytes of data\n", bodyc);
-		goto error;
-	}
+		if (fread(body, sizeof(char), bodyc, stream) != bodyc) {
+			free(body);
+			printf("Unable to read %zu bytes of data\n", bodyc);
+			goto error;
+		}
+		body[bodyc] = '\0';
+	} else body = NULL;
 
 	processing_state = HTTPPROCESSING_END;
 
-	res->head = head;
+	res->method = head.method;
+	res->path = head.path;
+	res->httpver = head.httpver;
 	res->headers = headers;
 	res->body = body;
 	res->bodyc = bodyc;
@@ -268,6 +362,7 @@ processBody:
 
 error:
 	free(line);
+	destroyHTTPHeaderVector(&headers);
 	return HTTPREQ_FAILED;
 }
 
@@ -281,4 +376,5 @@ void destroyHTTPRequest(struct HTTPRequest *req)
 	}
 	free(req->body);
 	vectorDestroy_p(&req->headers);
+	free(req->path);
 }

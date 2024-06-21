@@ -43,8 +43,8 @@ void connhandler(FILE *stream)
 
 		destroyHTTPRequest(&req);
 		fprintf(stream, "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nContent-Type: text/plain\r\nContent-Length:10\r\n\r\nasdfasdf\r\n");
-		if (req.head.httpver == HTTPV_10) break;
-		else if (req.head.httpver == HTTPV_11) continue;
+		if (req.httpver == HTTPV_10) break;
+		else if (req.httpver == HTTPV_11) continue;
 		else break;
 	}
 

@@ -7,7 +7,7 @@ FetchContent_MakeAvailable(googletest)
 
 
 add_executable(chttp_test
-	httpParser.cc
+	http.cc
 	vectorsTest.cc
 	appArgsTest.cc
 )
