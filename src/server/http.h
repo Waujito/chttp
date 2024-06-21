@@ -22,6 +22,12 @@ extern "C" {
 #define HTTPM_GET 1
 #define HTTPM_HEAD 2
 #define HTTPM_POST 3
+#define HTTPM_PUT 4
+#define HTTPM_DELETE 5
+#define HTTPM_CONNECT 6
+#define HTTPM_OPTIONS 7
+#define HTTPM_TRACE 8
+#define HTTPM_PATCH 9
 
 /**
 * Parses an HTTP request method. 
@@ -214,11 +220,6 @@ struct HTTPResponse {
 	size_t bodyc;
 	const char *body;
 };
-
-/**
- * Returns response status description (e.g. `OK` on 200 status). NULL if status is not defined.
- */
-const char *responseStatusDesc(int status);
 
 /**
  * Initializes HTTP Response structure with blank data

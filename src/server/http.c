@@ -3,53 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include "HttpStatusCodes_C.h"
 
-int parseHTTPMethod(const char *method_str)
-{
-	errno = 0;
-
-	if (method_str == NULL) {
-		errno = EINVAL;
-		return HTTPM_FAILED;
-	} else if (!strcmp(method_str, "GET")) {
-		return HTTPM_GET;
-	} else if (!strcmp(method_str, "HEAD")) {
-		return HTTPM_HEAD;
-	} else if (!strcmp(method_str, "POST")) {
-		return HTTPM_POST;
-	} else {
-		errno = EINVAL;
-		return HTTPM_FAILED;
-	}
-}
-
-int parseHTTPVersion(const char *version_str)
-{
-	errno = 0;
-
-	if (version_str == NULL) {
-		errno = EINVAL;
-		return HTTPV_INVAL;
-	} else if (!strcmp(version_str, "HTTP/1.0")) {
-		return HTTPV_10;
-	} else if (!strcmp(version_str, "HTTP/1.1")) {
-		return HTTPV_11;
-	} else {
-		errno = EINVAL;
-		return HTTPM_FAILED;
-	}
-}
-
-const char *HTTPVersionToString(int version)
-{
-	if (version == HTTPV_11) {
-		return "HTTP/1.1";
-	} else if (version == HTTPV_10) {
-		return "HTTP/1.0";
-	} else {
-		return NULL;
-	}
-}
 
 #define HEADPROCESS_METHOD 1
 #define HEADPROCESS_PATH 2
@@ -392,19 +347,6 @@ void destroyHTTPRequest(struct HTTPRequest *req)
 	free(req->path);
 }
 
-const char *responseStatusDesc(int status)
-{
-	switch (status) {
-		case 200:
-		return "OK";
-		break;
-		
-		default:
-		return NULL;
-		break;
-	}
-}
-
 int initHTTPResponse(struct HTTPResponse *response, int httpver) {
 	memset(response, 0, sizeof(struct HTTPResponse));
 
@@ -433,7 +375,7 @@ int writeHTTPResponse(struct HTTPResponse *response, FILE *stream)
 		goto error;
 	}
 
-	const char *statusDesc = responseStatusDesc(response->status);
+	const char *statusDesc = HttpStatus_reasonPhrase(response->status);
 
 	if (statusDesc != NULL) {
 		fprintf(stream, "%s %d %s\r\n", httpvs, response->status, statusDesc);
@@ -475,11 +417,8 @@ error:
 void httpConnetionHandler(FILE *stream, void *rawargs)
 {
 	struct HTTPConnectionHandlerArgs *args = rawargs;
-	printf("Got new connection on file %d\n", fileno(stream));
 
 	while (!feof(stream)) {
-		printf("Got new request on stream %d\n", fileno(stream));
-
 		struct HTTPRequest req;
 		int status = parseHTTPRequest(stream, &req);
 
@@ -514,5 +453,67 @@ void httpConnetionHandler(FILE *stream, void *rawargs)
 
 
 closeHandler:
-	printf("Conn closed %d\n", fileno(stream));
+	return; 
 }
+
+
+int parseHTTPMethod(const char *method_str)
+{
+	errno = 0;
+
+	if (method_str == NULL) {
+		errno = EINVAL;
+		return HTTPM_FAILED;
+	} else if (!strcmp(method_str, "GET")) {
+		return HTTPM_GET;
+	} else if (!strcmp(method_str, "HEAD")) {
+		return HTTPM_HEAD;
+	} else if (!strcmp(method_str, "POST")) {
+		return HTTPM_POST;
+	} else if (!strcmp(method_str, "PUT")) {
+		return HTTPM_POST;
+	} else if (!strcmp(method_str, "DELETE")) {
+		return HTTPM_POST;
+	} else if (!strcmp(method_str, "CONNECT")) {
+		return HTTPM_POST;
+	} else if (!strcmp(method_str, "OPTIONS")) {
+		return HTTPM_POST;
+	} else if (!strcmp(method_str, "TRACE")) {
+		return HTTPM_POST;
+	} else if (!strcmp(method_str, "PATCH")) {
+		return HTTPM_POST;
+	} else {
+		errno = EINVAL;
+		return HTTPM_FAILED;
+	}
+}
+
+int parseHTTPVersion(const char *version_str)
+{
+	errno = 0;
+
+	if (version_str == NULL) {
+		errno = EINVAL;
+		return HTTPV_INVAL;
+	} else if (!strcmp(version_str, "HTTP/1.0")) {
+		return HTTPV_10;
+	} else if (!strcmp(version_str, "HTTP/1.1")) {
+		return HTTPV_11;
+	} else {
+		errno = EINVAL;
+		return HTTPM_FAILED;
+	}
+}
+
+const char *HTTPVersionToString(int version)
+{
+	if (version == HTTPV_11) {
+		return "HTTP/1.1";
+	} else if (version == HTTPV_10) {
+		return "HTTP/1.0";
+	} else {
+		return NULL;
+	}
+}
+
+
