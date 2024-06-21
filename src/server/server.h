@@ -48,11 +48,14 @@ struct connData {
 
 /**
  * Callback function that is called on each connection.
+ *
+ * @connStream Conntection stream file to be processed.
+ * @args Additional args specified by each handler.
  */
-typedef void (*connhandler_t)(FILE *connStream);
+typedef void (*connhandler_t)(FILE *connStream, void *args);
 
 /**
- * Main server context.
+ * Context for an entire server.
  */
 struct ApplicationContext {
 	/**
@@ -79,7 +82,25 @@ struct ApplicationContext {
 	 * Callback for connections.
 	 */
 	connhandler_t connhandler;
+
+	/**
+	 * Context user specified arguments passed to the connection handler function.
+	 */
+	void *connhandlerArgs;
 };
+
+/**
+ * Initializes multiple contexts handler. MUST be called on application startup.
+ */
+int initApplication();
+/**
+ * Registers an application on context.
+ */
+size_t registerApplication(struct ApplicationContext *context);
+/**
+ * Closes all servers and an entire application, deallocates all memory used by library.
+ */
+int closeApplication(int sig);
 
 
 /**
@@ -87,12 +108,12 @@ struct ApplicationContext {
  *
  * @Returns Context creation status: 0 on success, -1 + errno otherwise.
  */
-int initContext(connhandler_t connhandler);
-
-/**
- * @Returns current application context.
- */
-struct ApplicationContext getContext();
+int initContext(struct ApplicationContext *context, connhandler_t connhandler, void *connhandlerArgs);
+//
+// /**
+//  * @Returns current application context.
+//  */
+// struct ApplicationContext getContext();
 
 /**
  * Starts the server. A blocking function mainly used to start the server listeners.
@@ -100,7 +121,7 @@ struct ApplicationContext getContext();
  *
  * @Returns Server starting status: 0 on success, -1 + errno otherwise.
  */
-int startServer();
+int startServer(struct ApplicationContext *context);
 
 /**
  * Create new socket.
@@ -147,35 +168,51 @@ int bindTCPSocket(struct ssock *res, in_port_t sin_port, struct in_addr sin_addr
  *
  * @Returns Context registration status: 0 on success, -1 + errno otherwise.
  */
-int contextRegisterSocket(struct ssock sock);
+int contextRegisterSocket(struct ApplicationContext *context, struct ssock sock);
 
+struct ConnectionListenerContext {
+	struct ApplicationContext *context;
+	// size_t variable which represents an index of struct connData in context.conns vector.
+	size_t cip;
+};
 /**
  * Thread callback that listens on one connection.
  *
- * @cip A pointer to a size_t variable which represents an index of struct connData in context.conns vector.
+ * @cip A pointer to a ConnectionListenerContext structure  
  */
-void *connListener(void *cip);
+void *connListener(void *clContext);
 	
+struct SocketListenerContext {
+	struct ApplicationContext *context;
+	// size_t variable which represents an index of struct ssock in context.socks vector.
+	size_t sip;
+};
 /**
  * Thread callback that listens on one socket, accepts new connections and redirects it to connListener()
  *
- * @sip A pointer to a size_t variable which represents an index of struct ssock in context.socks vector.
+ * @slContext a pointer to SocketListenerContext structure.
  */
-void *serverListener(void *sip);
+void *socketListener(void *slContext);
 
+struct ClosingContext {
+	struct ApplicationContext *context;
+	// Signal to interrupt. Used for program execution status code: SIGINT and 0 = success, otherwise failure.
+	int sig;
+};
 /**
  * Base function that closes an entire server: all the threads and context.
  * Should be run in the separate thread (or main thread) to escape crashes.
  *
- * @sig Signal to interrupt. Used for program execution status code: SIGINT and 0 = success, otherwise failure.
+ * @closeContext ClosingContext structure.
  * @Returns close status: 0 on success, -1 on close failure, 1 on @sig param pointing on failure.
  */
-int closeServer(int sig);
+int closeServer(struct ClosingContext closeContext);
 
 /**
  * Thread callback that used to call closeSocks. And stop the program.
+ * @context pointer to ClosingContext structure.
  */
-void *handlerThread(void * rawsig);
+void *handlerThread(void *rawcontext);
 
 /**
  * Handler callback that used to create handlerThread() thread.

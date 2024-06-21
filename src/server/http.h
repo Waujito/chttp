@@ -240,6 +240,15 @@ void destroyHTTPResponse(struct HTTPResponse *response);
  */
 int writeHTTPResponse(struct HTTPResponse *response, FILE *stream);
 
+typedef void (*httpProcessor_t)(struct HTTPRequest *request, struct HTTPResponse *response);
+
+struct HTTPConnectionHandlerArgs {
+	httpProcessor_t httpRequestProcessor;
+};
+/**
+ * Handler for http connections used to pass as connhandler_t for server. 
+ */
+void httpConnetionHandler(FILE *stream, void *args);
 #ifdef __cplusplus
 }
 #endif

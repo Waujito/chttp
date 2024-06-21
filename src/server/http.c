@@ -464,3 +464,55 @@ int writeHTTPResponse(struct HTTPResponse *response, FILE *stream)
 error:
 	return -1;
 }
+
+
+
+#define HTTPHEAD_PROCESSING 0
+#define HTTPHEADERS_PROCESSING 1
+#define HTTPBODY_PROCESSING 2
+#define HTTPPROCESSING_END 100
+
+void httpConnetionHandler(FILE *stream, void *rawargs)
+{
+	struct HTTPConnectionHandlerArgs *args = rawargs;
+	printf("Got new connection on file %d\n", fileno(stream));
+
+	while (!feof(stream)) {
+		printf("Got new request on stream %d\n", fileno(stream));
+
+		struct HTTPRequest req;
+		int status = parseHTTPRequest(stream, &req);
+
+		if (status == HTTPREQ_FAILED) {
+			destroyHTTPRequest(&req);
+
+			printf("Cannot parse request\n");
+			goto closeHandler;
+	
+		} else if (status == HTTPREQ_EOF) {
+			destroyHTTPRequest(&req);
+			goto closeHandler;
+		}
+
+		struct HTTPResponse resp;
+		if (initHTTPResponse(&resp, req.httpver)) {
+			destroyHTTPRequest(&req);
+			goto closeHandler;
+		}
+
+		args->httpRequestProcessor(&req, &resp);
+
+		if (writeHTTPResponse(&resp, stream)) {
+			printf("HTTP Response is invalid: %s\n", strerror(errno));
+			goto closeHandler;
+		}
+
+		if (req.httpver == HTTPV_10) break;
+		else if (req.httpver == HTTPV_11) continue;
+		else break;
+	}
+
+
+closeHandler:
+	printf("Conn closed %d\n", fileno(stream));
+}

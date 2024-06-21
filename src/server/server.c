@@ -20,20 +20,33 @@
 #define LISTEN_BACKLOG 1000
 #endif
 
-struct ApplicationContext context = { 0 };
+/**
+* Global variable that maintains multiple ApplicationContexts. Used for fast close of an entire application 
+* which may contain multiple Servers on.
+*/
+struct vector registeredApplications;
 
-int initContext(connhandler_t connhander) 
+int initApplication() {
+	return initVector(&registeredApplications, 2);
+}
+
+size_t registerApplication(struct ApplicationContext *context) {
+	return insertVector(&registeredApplications, context);
+}
+
+int initContext(struct ApplicationContext *context, connhandler_t connhander, void *connhandlerArgs) 
 {
-	memset(&context, 0, sizeof(context));
-	if (	initVector(&context.socks, 2) ||
-		initVector(&context.socksThreads, 2) || 
-		initVector(&context.conns, 2) || 
-		pthread_mutex_init(&context.closeLock, NULL)) {
+	memset(context, 0, sizeof(struct ApplicationContext));
+	if (	initVector(&context->socks, 2) ||
+		initVector(&context->socksThreads, 2) || 
+		initVector(&context->conns, 2) || 
+		pthread_mutex_init(&context->closeLock, NULL)) {
 
 		goto error;
 	}
 
-	context.connhandler = connhander;
+	context->connhandler = connhander;
+	context->connhandlerArgs = connhandlerArgs;
 
 	return 0;
 
@@ -41,40 +54,34 @@ error:
 	return -1;
 }
 
-struct ApplicationContext getContext()
+int startServer(struct ApplicationContext *context)
 {
-	return context;
-}
-
-int startServer()
-{
-	size_t sz = context.socks.size;
-	size_t *iptrs = malloc(sizeof(size_t) * sz);
+	size_t sz = context->socks.size;
 
 	for (size_t i = 0; i < sz; i++) {
-		iptrs[i] = i;
+		struct SocketListenerContext *slContext = malloc(sizeof(struct SocketListenerContext));
+		slContext->context = context;
+		slContext->sip = i;
 
 		pthread_t *thr = malloc(sizeof(pthread_t));
 
-		if (pthread_create(thr, NULL, serverListener, iptrs + i)) {
+		if (pthread_create(thr, NULL, socketListener, slContext)) {
 			perror("Unable to create thread");
 			goto error;
 		}
 
-		insertVector(&context.socksThreads, thr);
+		insertVector(&context->socksThreads, thr);
 	}
 
-	for (size_t i = 0; i < context.socksThreads.size; i++) {
-		pthread_t *thr = vectorGetEl(&context.socksThreads, i);
+	for (size_t i = 0; i < context->socksThreads.size; i++) {
+		pthread_t *thr = vectorGetEl(&context->socksThreads, i);
 		if (thr == NULL) continue;
 		
 		pthread_join(*thr, NULL);
 	}
 
-	free(iptrs);
 	return 0;
 error:
-	free(iptrs);
 	return -1;
 }
 
@@ -212,31 +219,35 @@ error:
 
 
 
-int contextRegisterSocket(struct ssock sock)
+int contextRegisterSocket(struct ApplicationContext *context, struct ssock sock)
 {
 	struct ssock *sockp = malloc(sizeof(struct ssock));
 	*sockp = sock;
 
-	insertVector(&context.socks, sockp);
+	insertVector(&context->socks, sockp);
 
 	return 0;
 }
 
-void *connListener(void *cip)
+void *connListener(void *rawCLContext)
 {
-	if (cip == NULL) return NULL;
-	int ci = *(int *)cip;
-	free(cip);
+	if (rawCLContext == NULL) return NULL;
+	struct ConnectionListenerContext *clContextp = rawCLContext;
+	struct ConnectionListenerContext clContext = *clContextp;
+	free(rawCLContext);
 
-	struct connData *conn = vectorGetEl(&context.conns, ci);
+	struct ApplicationContext *context = clContext.context;
+	size_t ci = clContext.cip;
+
+	struct connData *conn = vectorGetEl(&context->conns, ci);
 	if (conn == NULL) return NULL;
 
 	FILE *stream = conn->connStream;
 	
-	context.connhandler(stream);
+	context->connhandler(stream, context->connhandlerArgs);
 
 closeConn:
-	vectorSetEl(&context.conns, ci, NULL);
+	vectorSetEl(&context->conns, ci, NULL);
 
 	pthread_mutex_t *lock = conn->lock;
 	if (lock == NULL) return NULL;
@@ -256,10 +267,16 @@ closeConn:
 	return NULL;
 }
 
-void *serverListener(void *sip)
+void *socketListener(void *rawSLContext)
 {
-	int si = *(int *)sip;
-	struct ssock *sockp = vectorGetEl(&context.socks, si);
+	if (rawSLContext == NULL) return NULL;
+	struct SocketListenerContext *slContextp = rawSLContext;
+	struct SocketListenerContext slContext = *slContextp;
+	free(rawSLContext);
+	struct ApplicationContext *context = slContext.context;
+	size_t si = slContext.sip;
+
+	struct ssock *sockp = vectorGetEl(&context->socks, si);
 	if (sockp == NULL) return NULL;
 	struct ssock sock = *sockp;
 
@@ -301,11 +318,12 @@ void *serverListener(void *sip)
 		conn->connStream = rwstream;
 		conn->lock = connLock;
 
-		size_t ci = insertVector(&context.conns, conn);
-		size_t *cip = malloc(sizeof(size_t));
-		*cip = ci;
+		size_t ci = insertVector(&context->conns, conn);
+		struct ConnectionListenerContext *clContext = malloc(sizeof(struct ConnectionListenerContext));
+		clContext->cip = ci;
+		clContext->context = context;
 
-		if (pthread_create(cthread, &thattr, connListener, cip))
+		if (pthread_create(cthread, &thattr, connListener, clContext))
 			goto connError;
 
 
@@ -322,16 +340,18 @@ error:
 	return NULL;
 }
 
-int closeServer(int sig)
+int closeServer(struct ClosingContext closeContext)
 {
-	pthread_mutex_lock(&context.closeLock);
+	struct ApplicationContext *context = closeContext.context;
+	int sig = closeContext.sig;
+	pthread_mutex_lock(&context->closeLock);
 
 	int err = 0;
 
 	printf("Closing...\n");
 
-	for (size_t i = 0; i < context.socksThreads.size; i++) {
-		pthread_t **scpt = (pthread_t **) context.socksThreads.arr + i;
+	for (size_t i = 0; i < context->socksThreads.size; i++) {
+		pthread_t **scpt = (pthread_t **) context->socksThreads.arr + i;
 		pthread_t *sockThread = *scpt;
 		if (sockThread == NULL) continue;
 
@@ -343,8 +363,8 @@ int closeServer(int sig)
 
 	printf("Closed listeners\n");
 
-	for (size_t i = 0; i < context.socks.size; i++) {
-		struct ssock **sockp = (struct ssock **)context.socks.arr + i;
+	for (size_t i = 0; i < context->socks.size; i++) {
+		struct ssock **sockp = (struct ssock **)context->socks.arr + i;
 		struct ssock *sock = *sockp;
 
 		if (sock == NULL) continue;
@@ -366,8 +386,8 @@ int closeServer(int sig)
 
 	printf("Closed socks\n");
 
-	for (size_t i = 0; i < context.conns.size; i++) {
-		struct connData *cd = vectorGetEl(&context.conns, i);
+	for (size_t i = 0; i < context->conns.size; i++) {
+		struct connData *cd = vectorGetEl(&context->conns, i);
 
 		if (cd == NULL) continue;
 		struct connData ccd = *cd;
@@ -375,7 +395,7 @@ int closeServer(int sig)
 		if (ccd.lock == NULL || pthread_mutex_lock(ccd.lock))
 			continue;
 
-		if (vectorGetEl(&context.conns, i) == NULL) continue;
+		if (vectorGetEl(&context->conns, i) == NULL) continue;
 		cd->lock = NULL;
 
 		pthread_mutex_t *lock = ccd.lock;
@@ -388,15 +408,15 @@ int closeServer(int sig)
 		fclose(ccd.connStream);
 
 		free(cd);
-		vectorSetEl(&context.conns, i, NULL);
+		vectorSetEl(&context->conns, i, NULL);
 
 		pthread_mutex_unlock(lock);
 		pthread_mutex_destroy(lock);
 	}
 
-	free(context.socksThreads.arr);
-	free(context.socks.arr);
-	free(context.conns.arr);
+	free(context->socksThreads.arr);
+	free(context->socks.arr);
+	free(context->conns.arr);
 
 	printf("Closed all connections\n");
 
@@ -414,10 +434,24 @@ int closeServer(int sig)
 	}
 }
 
-void *handlerThread(void * rawsig) {
-	int *sig = (int *)rawsig;
+int closeApplication(int sig) {
+	int closeStatus = 0;
+	for (size_t i = 0; i < registeredApplications.size; i++) {
+		struct ApplicationContext *context = vectorGetEl(&registeredApplications, i);
+		struct ClosingContext clContext = { .context=  context, .sig = sig };
+		int curStatus = closeServer(clContext);
+		if (curStatus) closeStatus = curStatus;
+	}
 
-	int closeStatus = closeServer(*sig);
+	vectorDestroy(&registeredApplications);
+
+	return closeStatus;
+}
+void *handlerThread(void *sigp) {
+	int sig = *(int *)sigp;
+	free(sigp);
+
+	int closeStatus = closeApplication(sig);	
 
 	if (closeStatus) 
 		exit(EXIT_FAILURE);
@@ -440,7 +474,7 @@ void handlerCallback(int sig) {
 	pthread_join(thr, NULL);
 error:
 	perror("Unable to handle cancel gracefully");
-	closeServer(sig);
+	closeApplication(sig);
 	exit(EXIT_FAILURE);
 }
 
